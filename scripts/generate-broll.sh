@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate B-roll video via Kling 3 on fal.ai (primary) or Replicate (fallback).
-# Supports both text-to-video and image-to-video (start image).
+# Generate B-roll video via Seedance 2.0 on fal.ai (primary) with Kling 3 fallback.
+# Refactor 2026-04: trocou Kling 3 → Seedance 2.0 (mais barato no tier fast,
+# áudio nativo bundled, 4–15s, 480/720/1080p).
+# Replicate Kling Omni mantido como fallback de resiliência.
+# Supports text-to-video, image-to-video, and reference-to-video.
 #
 # Usage:
-#   # Text to video (fal.ai)
+#   # Text to video (Seedance 2.0 fast — default)
 #   bash generate-broll.sh --prompt-file scene.txt --output broll.mp4 --seconds 5
 #
-#   # Image to video (fal.ai)
+#   # Image to video (Seedance 2.0 i2v)
 #   bash generate-broll.sh --image product.png --prompt-file motion.txt --output broll.mp4
 #
-#   # Force Replicate fallback
-#   bash generate-broll.sh --provider replicate --prompt-file scene.txt --output broll.mp4
+#   # Standard quality (mais caro, mais detalhe)
+#   bash generate-broll.sh --quality standard --prompt-file scene.txt --output broll.mp4
+#
+#   # Forçar Kling 3 (legado)
+#   bash generate-broll.sh --model kling --prompt-file scene.txt --output broll.mp4
 
 PROMPT_FILE=""
 IMAGE=""
@@ -21,6 +27,9 @@ SECONDS_DUR="5"
 ASPECT_RATIO="9:16"
 GENERATE_AUDIO="true"
 PROVIDER="fal"
+QUALITY="fast"      # fast | standard
+MODEL_FAMILY="seedance"  # seedance | kling
+RESOLUTION="720p"
 POLL_INTERVAL=10
 TIMEOUT=600
 LOG_FILE=""
@@ -33,10 +42,13 @@ usage() {
     echo "  --prompt-file FILE    Scene/motion description (required)"
     echo "  --image FILE          Start image URL for i2v mode (optional)"
     echo "  --output FILE         Output video path (required)"
-    echo "  --seconds N           Duration in seconds, 3-15 (default: 5)"
+    echo "  --seconds N           Duration in seconds, 4-15 (default: 5)"
     echo "  --aspect-ratio RATIO  Aspect ratio (default: 9:16)"
+    echo "  --resolution RES      480p | 720p | 1080p (default: 720p)"
+    echo "  --quality LEVEL       fast (~\$0.024/s) or standard (~\$0.30/s) — Seedance only"
+    echo "  --model FAMILY        seedance (default) | kling (legacy via fal)"
     echo "  --no-audio            Disable audio generation"
-    echo "  --provider NAME       fal or replicate (default: fal)"
+    echo "  --provider NAME       fal (default) or replicate (Replicate Kling fallback)"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -50,6 +62,9 @@ while [[ $# -gt 0 ]]; do
         --output) OUTPUT="$2"; shift 2 ;;
         --seconds) SECONDS_DUR="$2"; shift 2 ;;
         --aspect-ratio) ASPECT_RATIO="$2"; shift 2 ;;
+        --resolution) RESOLUTION="$2"; shift 2 ;;
+        --quality) QUALITY="$2"; shift 2 ;;
+        --model) MODEL_FAMILY="$2"; shift 2 ;;
         --no-audio) GENERATE_AUDIO="false"; shift ;;
         --provider) PROVIDER="$2"; shift 2 ;;
         --log-file) LOG_FILE="$2"; shift 2 ;;
@@ -64,42 +79,90 @@ done
 
 PROMPT=$(cat "$PROMPT_FILE")
 
-# Validate duration
-if [[ "$SECONDS_DUR" -lt 3 || "$SECONDS_DUR" -gt 15 ]]; then
-    echo "Error: --seconds must be between 3 and 15" >&2
+# Validate duration (Seedance 2.0 = 4–15s; Kling = 5–10s)
+if [[ "$SECONDS_DUR" -lt 4 || "$SECONDS_DUR" -gt 15 ]]; then
+    echo "Error: --seconds must be between 4 and 15 (Seedance 2.0 range)" >&2
     exit 1
 fi
 
+# Resolve fal.ai endpoint based on model family + quality + image
+fal_endpoint() {
+    if [[ "$MODEL_FAMILY" == "kling" ]]; then
+        # Legacy Kling 3 path (fallback if Seedance is unavailable)
+        if [[ -n "$IMAGE" ]]; then
+            echo "https://queue.fal.run/fal-ai/kling-video/v3/pro/image-to-video"
+        else
+            echo "https://queue.fal.run/fal-ai/kling-video/v3/pro/text-to-video"
+        fi
+        return
+    fi
+    # Seedance 2.0 (default)
+    local prefix="bytedance/seedance-2.0"
+    if [[ "$QUALITY" == "fast" ]]; then
+        prefix="${prefix}/fast"
+    fi
+    if [[ -n "$IMAGE" ]]; then
+        echo "https://queue.fal.run/${prefix}/image-to-video"
+    else
+        echo "https://queue.fal.run/${prefix}/text-to-video"
+    fi
+}
+
 # ---------------------------------------------------------------------------
-# fal.ai provider
+# fal.ai provider — Seedance 2.0 (default) or Kling 3 (--model kling)
 # ---------------------------------------------------------------------------
 generate_fal() {
     [[ -z "${FAL_KEY:-}" ]] && { echo "Error: FAL_KEY not set"; exit 2; }
 
-    # Choose endpoint: i2v if image provided, t2v otherwise
-    if [[ -n "$IMAGE" ]]; then
-        ENDPOINT="https://queue.fal.run/fal-ai/kling-video/v3/pro/image-to-video"
-        INPUT_JSON=$(jq -n \
-            --arg prompt "$PROMPT" \
-            --arg image "$IMAGE" \
-            --argjson duration "$SECONDS_DUR" \
-            --arg ar "$ASPECT_RATIO" \
-            --argjson audio "$GENERATE_AUDIO" \
-            '{prompt: $prompt, start_image_url: $image, duration: $duration, aspect_ratio: $ar, generate_audio: $audio}')
-        echo "Mode: image-to-video (Kling i2v via fal.ai)"
+    ENDPOINT=$(fal_endpoint)
+    local mode_desc
+    if [[ -n "$IMAGE" ]]; then mode_desc="image-to-video"; else mode_desc="text-to-video"; fi
+
+    if [[ "$MODEL_FAMILY" == "seedance" ]]; then
+        # Seedance 2.0 schema: prompt, resolution, duration (string), aspect_ratio, generate_audio, image_url (i2v)
+        # Note: Seedance uses "resolution" + duration as string; Kling uses "duration" as int
+        if [[ -n "$IMAGE" ]]; then
+            INPUT_JSON=$(jq -n \
+                --arg prompt "$PROMPT" \
+                --arg image "$IMAGE" \
+                --arg duration "$SECONDS_DUR" \
+                --arg ar "$ASPECT_RATIO" \
+                --arg res "$RESOLUTION" \
+                --argjson audio "$GENERATE_AUDIO" \
+                '{prompt: $prompt, image_url: $image, duration: $duration, aspect_ratio: $ar, resolution: $res, generate_audio: $audio}')
+        else
+            INPUT_JSON=$(jq -n \
+                --arg prompt "$PROMPT" \
+                --arg duration "$SECONDS_DUR" \
+                --arg ar "$ASPECT_RATIO" \
+                --arg res "$RESOLUTION" \
+                --argjson audio "$GENERATE_AUDIO" \
+                '{prompt: $prompt, duration: $duration, aspect_ratio: $ar, resolution: $res, generate_audio: $audio}')
+        fi
+        echo "Mode: ${mode_desc} (Seedance 2.0 ${QUALITY} via fal.ai)"
     else
-        ENDPOINT="https://queue.fal.run/fal-ai/kling-video/v3/pro/text-to-video"
-        INPUT_JSON=$(jq -n \
-            --arg prompt "$PROMPT" \
-            --argjson duration "$SECONDS_DUR" \
-            --arg ar "$ASPECT_RATIO" \
-            --argjson audio "$GENERATE_AUDIO" \
-            '{prompt: $prompt, duration: $duration, aspect_ratio: $ar, generate_audio: $audio}')
-        echo "Mode: text-to-video (Kling t2v via fal.ai)"
+        # Kling 3 legacy schema (kept for emergency fallback)
+        if [[ -n "$IMAGE" ]]; then
+            INPUT_JSON=$(jq -n \
+                --arg prompt "$PROMPT" \
+                --arg image "$IMAGE" \
+                --argjson duration "$SECONDS_DUR" \
+                --arg ar "$ASPECT_RATIO" \
+                --argjson audio "$GENERATE_AUDIO" \
+                '{prompt: $prompt, start_image_url: $image, duration: $duration, aspect_ratio: $ar, generate_audio: $audio}')
+        else
+            INPUT_JSON=$(jq -n \
+                --arg prompt "$PROMPT" \
+                --argjson duration "$SECONDS_DUR" \
+                --arg ar "$ASPECT_RATIO" \
+                --argjson audio "$GENERATE_AUDIO" \
+                '{prompt: $prompt, duration: $duration, aspect_ratio: $ar, generate_audio: $audio}')
+        fi
+        echo "Mode: ${mode_desc} (Kling 3 legacy via fal.ai)"
     fi
 
     echo "Endpoint: $ENDPOINT"
-    echo "Duration: ${SECONDS_DUR}s | Aspect: $ASPECT_RATIO | Audio: $GENERATE_AUDIO"
+    echo "Duration: ${SECONDS_DUR}s | Aspect: $ASPECT_RATIO | Resolution: $RESOLUTION | Audio: $GENERATE_AUDIO"
 
     # Submit to queue
     RESPONSE=$(curl -s -X POST "$ENDPOINT" \
@@ -169,7 +232,17 @@ generate_fal() {
 
     # Log
     if [[ -n "$LOG_FILE" ]]; then
-        log_entry "fal-ai/kling-v3-pro" "$REQUEST_ID"
+        local model_name
+        if [[ "$MODEL_FAMILY" == "seedance" ]]; then
+            if [[ "$QUALITY" == "fast" ]]; then
+                model_name="bytedance/seedance-2.0/fast"
+            else
+                model_name="bytedance/seedance-2.0"
+            fi
+        else
+            model_name="fal-ai/kling-v3-pro"
+        fi
+        log_entry "$model_name" "$REQUEST_ID"
     fi
 
     echo ""

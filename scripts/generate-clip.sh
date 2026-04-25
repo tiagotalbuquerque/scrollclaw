@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate a video clip via Sora 2 or Kling 3 on fal.ai, with Replicate fallback.
-# Supports both text-to-video and image-to-video (first frame).
+# Generate a video clip via Sora 2 (primary) with Seedance 2.0 (fal) and Replicate Kling fallbacks.
+# Refactor 2026-04: substitui Kling 3 fal.ai por Seedance 2.0 na cadeia. Replicate
+# Sora foi sunsetted no upstream — removido. Replicate Kling mantido como
+# emergency fallback.
+# Supports text-to-video and image-to-video (first frame).
 #
 # Fallback chain (default --provider fal):
-#   Sora 2 fal.ai -> Kling 3 fal.ai -> Kling 3 Replicate
+#   Sora 2 fal.ai → Seedance 2.0 fal.ai → Kling 3 Replicate
 #
 # Usage:
-#   # Text to video (fal.ai, default — tries Sora then Kling)
+#   # Text to video (default — tenta Sora, depois Seedance, depois Replicate Kling)
 #   bash generate-clip.sh --prompt-file scene.txt --output clip.mp4 --seconds 8
 #
-#   # Image to video (fal.ai)
+#   # Image to video (first frame i2v)
 #   bash generate-clip.sh --image frame1.png --prompt-file motion.txt --output clip.mp4 --seconds 8
 #
-#   # Skip Sora, use Kling directly (for when Sora is sunset)
-#   bash generate-clip.sh --provider kling --prompt-file scene.txt --output clip.mp4 --seconds 8
-#
-#   # Via Replicate (Sora — legacy)
-#   bash generate-clip.sh --provider replicate --prompt-file scene.txt --output clip.mp4 --seconds 8
+#   # Pular Sora, usar Seedance direto (caso Sora caia)
+#   bash generate-clip.sh --provider seedance --prompt-file scene.txt --output clip.mp4 --seconds 8
 
 PROMPT_FILE=""
 IMAGE=""
@@ -42,10 +42,10 @@ usage() {
     echo "  --seconds N           Duration in seconds (default: 8)"
     echo "  --aspect-ratio RATIO  portrait or landscape (default: portrait)"
     echo "  --pro                 Use Pro model tier"
-    echo "  --provider NAME       fal, kling, or replicate (default: fal)"
-    echo "                        fal: tries Sora then Kling then Replicate Kling"
-    echo "                        kling: skips Sora, tries Kling fal then Replicate"
-    echo "                        replicate: Sora on Replicate (legacy)"
+    echo "  --provider NAME       fal | seedance | kling-replicate (default: fal)"
+    echo "                        fal: tenta Sora → Seedance fal → Kling Replicate"
+    echo "                        seedance: pula Sora, vai direto para Seedance fal → Kling Replicate"
+    echo "                        kling-replicate: emergência, vai direto para Replicate Kling"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -214,44 +214,47 @@ generate_fal() {
 }
 
 # ---------------------------------------------------------------------------
-# fal.ai Kling 3 provider (A-roll fallback)
+# fal.ai Seedance 2.0 provider (A-roll fallback) — refator 2026-04
+# Substitui Kling 3. Áudio nativo bundled, mais barato.
 # ---------------------------------------------------------------------------
-generate_kling_fal() {
+generate_seedance_fal() {
     [[ -z "${FAL_KEY:-}" ]] && { echo "Error: FAL_KEY not set"; exit 2; }
 
-    # Kling duration: 3-15 seconds (clamp if outside range)
-    KLING_DURATION="$SECONDS_DUR"
-    if [[ "$KLING_DURATION" -gt 15 ]]; then
-        echo "Warning: Duration clamped from ${KLING_DURATION}s to 15s (Kling max)" >&2
-        KLING_DURATION=15
+    # Seedance 2.0 duration: 4-15 seconds (clamp if outside range)
+    SEED_DURATION="$SECONDS_DUR"
+    if [[ "$SEED_DURATION" -gt 15 ]]; then
+        echo "Warning: Duration clamped from ${SEED_DURATION}s to 15s (Seedance max)" >&2
+        SEED_DURATION=15
     fi
-    if [[ "$KLING_DURATION" -lt 3 ]]; then
-        echo "Warning: Duration clamped from ${KLING_DURATION}s to 3s (Kling min)" >&2
-        KLING_DURATION=3
+    if [[ "$SEED_DURATION" -lt 4 ]]; then
+        echo "Warning: Duration clamped from ${SEED_DURATION}s to 4s (Seedance min)" >&2
+        SEED_DURATION=4
     fi
 
-    # Choose endpoint: i2v if image provided, t2v otherwise
+    # A-roll: usa Seedance standard (não fast) por qualidade de talking head
+    # Schema: prompt, image_url (i2v), duration (string), aspect_ratio, resolution, generate_audio
     if [[ -n "$IMAGE" ]]; then
-        ENDPOINT="https://queue.fal.run/fal-ai/kling-video/v3/pro/image-to-video"
+        ENDPOINT="https://queue.fal.run/bytedance/seedance-2.0/image-to-video"
+        # IMAGE pode ser URL ou path local; assumir que upstream passou URL ou já uploadou
         INPUT_JSON=$(jq -n \
             --arg prompt "$PROMPT" \
             --arg image "$IMAGE" \
-            --argjson duration "$KLING_DURATION" \
+            --arg duration "$SEED_DURATION" \
             --arg ar "$MAPPED_ASPECT" \
-            '{prompt: $prompt, start_image_url: $image, duration: $duration, aspect_ratio: $ar, generate_audio: true}')
-        echo "Mode: image-to-video (Kling i2v via fal.ai)"
+            '{prompt: $prompt, image_url: $image, duration: $duration, aspect_ratio: $ar, resolution: "720p", generate_audio: true}')
+        echo "Mode: image-to-video (Seedance 2.0 i2v via fal.ai)"
     else
-        ENDPOINT="https://queue.fal.run/fal-ai/kling-video/v3/pro/text-to-video"
+        ENDPOINT="https://queue.fal.run/bytedance/seedance-2.0/text-to-video"
         INPUT_JSON=$(jq -n \
             --arg prompt "$PROMPT" \
-            --argjson duration "$KLING_DURATION" \
+            --arg duration "$SEED_DURATION" \
             --arg ar "$MAPPED_ASPECT" \
-            '{prompt: $prompt, duration: $duration, aspect_ratio: $ar, generate_audio: true}')
-        echo "Mode: text-to-video (Kling t2v via fal.ai)"
+            '{prompt: $prompt, duration: $duration, aspect_ratio: $ar, resolution: "720p", generate_audio: true}')
+        echo "Mode: text-to-video (Seedance 2.0 t2v via fal.ai)"
     fi
 
     echo "Endpoint: $ENDPOINT"
-    echo "Duration: ${KLING_DURATION}s | Aspect: $MAPPED_ASPECT | Audio: true"
+    echo "Duration: ${SEED_DURATION}s | Aspect: $MAPPED_ASPECT | Resolution: 720p | Audio: true"
 
     # Submit to queue
     RESPONSE=$(curl -s -X POST "$ENDPOINT" \
@@ -290,13 +293,13 @@ generate_kling_fal() {
                 ;;
             FAILED)
                 ERROR=$(echo "$POLL" | jq -r '.error // "unknown error"')
-                echo "Kling generation failed: $ERROR" >&2
+                echo "Seedance generation failed: $ERROR" >&2
                 return 1
                 ;;
             *)
                 ELAPSED=$(( $(date +%s) - START_TIME ))
                 if [[ $ELAPSED -gt $TIMEOUT ]]; then
-                    echo "Kling timeout after ${TIMEOUT}s" >&2
+                    echo "Seedance timeout after ${TIMEOUT}s" >&2
                     return 1
                 fi
                 echo "  Status: $STATUS (${ELAPSED}s elapsed)"
@@ -308,7 +311,7 @@ generate_kling_fal() {
     # Download output
     VIDEO_URL=$(echo "$RESULT" | jq -r '.video.url // empty')
     if [[ -z "$VIDEO_URL" || "$VIDEO_URL" == "null" ]]; then
-        echo "Error: No video URL in Kling response" >&2
+        echo "Error: No video URL in Seedance response" >&2
         echo "$RESULT" | jq . >&2
         return 1
     fi
@@ -319,7 +322,7 @@ generate_kling_fal() {
 
     # Log
     if [[ -n "$LOG_FILE" ]]; then
-        log_entry "fal-ai/kling-v3-pro" "$REQUEST_ID" "$KLING_DURATION"
+        log_entry "bytedance/seedance-2.0" "$REQUEST_ID" "$SEED_DURATION"
     fi
 
     echo ""
@@ -327,125 +330,8 @@ generate_kling_fal() {
 }
 
 # ---------------------------------------------------------------------------
-# Replicate Sora provider (legacy)
-# ---------------------------------------------------------------------------
-generate_replicate() {
-    [[ -z "${REPLICATE_API_TOKEN:-}" ]] && { echo "Error: REPLICATE_API_TOKEN not set"; exit 2; }
-
-    # Determine model path
-    if [[ "$PRO" == "true" ]]; then
-        MODEL_PATH="openai/sora-2-pro"
-    else
-        MODEL_PATH="openai/sora-2"
-    fi
-
-    # Build input JSON
-    INPUT_JSON=$(cat <<EOF
-{
-    "prompt": $(echo "$PROMPT" | jq -Rs .),
-    "seconds": $SECONDS_DUR,
-    "aspect_ratio": "$ASPECT_RATIO"
-}
-EOF
-    )
-
-    # Add first frame for i2v
-    if [[ -n "$IMAGE" ]]; then
-        if [[ "$IMAGE" == http* ]]; then
-            INPUT_JSON=$(echo "$INPUT_JSON" | jq --arg img "$IMAGE" '. + {input_reference: $img}')
-        else
-            # Upload local file to Replicate first
-            echo "Uploading first frame to Replicate..."
-            UPLOAD_RESP=$(curl -s -X POST "https://api.replicate.com/v1/files" \
-                -H "Authorization: Token $REPLICATE_API_TOKEN" \
-                -F "content=@$IMAGE" \
-                -F "content_type=image/png")
-            FILE_URL=$(echo "$UPLOAD_RESP" | jq -r '.urls.get // empty')
-            if [[ -z "$FILE_URL" ]]; then
-                echo "Error uploading file:" >&2
-                echo "$UPLOAD_RESP" | jq . >&2
-                exit 1
-            fi
-            echo "Uploaded: $FILE_URL"
-            INPUT_JSON=$(echo "$INPUT_JSON" | jq --arg img "$FILE_URL" '. + {input_reference: $img}')
-        fi
-    fi
-
-    PAYLOAD=$(jq -n --argjson input "$INPUT_JSON" '{input: $input}')
-
-    echo "Creating prediction with $MODEL_PATH..."
-    echo "Duration: ${SECONDS_DUR}s | Aspect: $ASPECT_RATIO"
-    [[ -n "$IMAGE" ]] && echo "Mode: image-to-video (first frame)"
-
-    RESPONSE=$(curl -s -X POST "https://api.replicate.com/v1/models/${MODEL_PATH}/predictions" \
-        -H "Authorization: Token $REPLICATE_API_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$PAYLOAD")
-
-    PREDICTION_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
-    GET_URL=$(echo "$RESPONSE" | jq -r '.urls.get // empty')
-
-    if [[ -z "$PREDICTION_ID" || -z "$GET_URL" ]]; then
-        echo "Error creating prediction:" >&2
-        echo "$RESPONSE" | jq . >&2
-        exit 1
-    fi
-
-    echo "Prediction: $PREDICTION_ID"
-    echo "Polling..."
-
-    START_TIME=$(date +%s)
-    while true; do
-        POLL=$(curl -s -H "Authorization: Token $REPLICATE_API_TOKEN" "$GET_URL")
-        STATUS=$(echo "$POLL" | jq -r '.status')
-
-        case "$STATUS" in
-            succeeded)
-                echo "Generation complete!"
-                break
-                ;;
-            failed|canceled)
-                ERROR=$(echo "$POLL" | jq -r '.error // "unknown error"')
-                echo "Generation $STATUS: $ERROR" >&2
-                exit 1
-                ;;
-            *)
-                ELAPSED=$(( $(date +%s) - START_TIME ))
-                if [[ $ELAPSED -gt $TIMEOUT ]]; then
-                    echo "Timeout after ${TIMEOUT}s" >&2
-                    exit 1
-                fi
-                echo "  Status: $STATUS (${ELAPSED}s elapsed)"
-                sleep "$POLL_INTERVAL"
-                ;;
-        esac
-    done
-
-    # Download output
-    mkdir -p "$(dirname "$OUTPUT")"
-
-    # Output is a single MP4 URL string (not an array)
-    VIDEO_URL=$(echo "$POLL" | jq -r '.output // empty')
-    if [[ -n "$VIDEO_URL" && "$VIDEO_URL" != "null" ]]; then
-        curl -s -o "$OUTPUT" "$VIDEO_URL"
-        echo "Saved: $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
-    else
-        echo "Error: No output URL in response" >&2
-        echo "$POLL" | jq '.output' >&2
-        exit 1
-    fi
-
-    # Log
-    if [[ -n "$LOG_FILE" ]]; then
-        log_entry "$MODEL_PATH" "$PREDICTION_ID" "$SECONDS_DUR"
-    fi
-
-    echo ""
-    echo "Done. Prediction ID: $PREDICTION_ID"
-}
-
-# ---------------------------------------------------------------------------
-# Replicate Kling provider (final fallback)
+# Replicate Kling provider (final fallback) — Sora-on-Replicate removida no
+# refator 2026-04 (sunset upstream)
 # ---------------------------------------------------------------------------
 generate_replicate_kling() {
     [[ -z "${REPLICATE_API_TOKEN:-}" ]] && { echo "Error: REPLICATE_API_TOKEN not set"; exit 2; }
@@ -565,35 +451,38 @@ generate_replicate_kling() {
 
 # ---------------------------------------------------------------------------
 # Dispatch by provider
+# Cadeia refator 2026-04: Sora 2 fal → Seedance 2.0 fal → Kling 3 Replicate
+# (Sora-on-Replicate foi sunsetted no upstream e removido aqui)
 # ---------------------------------------------------------------------------
 case "$PROVIDER" in
     fal)
-        # Default: try Sora first, fall back to Kling fal, then Kling Replicate
+        # Default: tenta Sora; cai para Seedance; cai para Replicate Kling
         if ! generate_fal; then
             echo ""
-            echo "Sora fal.ai failed — falling back to Kling fal.ai..."
-            if ! generate_kling_fal; then
+            echo "Sora fal.ai failed — falling back to Seedance 2.0 fal.ai..."
+            if ! generate_seedance_fal; then
                 echo ""
-                echo "Kling fal.ai failed — falling back to Kling Replicate..."
+                echo "Seedance fal.ai failed — falling back to Kling Replicate..."
                 PROVIDER="replicate"
                 generate_replicate_kling
             fi
         fi
         ;;
-    kling)
-        # Skip Sora entirely — use when Sora is sunset
-        if ! generate_kling_fal; then
+    seedance)
+        # Pular Sora — útil se Sora estiver fora ou se quiser força Seedance
+        if ! generate_seedance_fal; then
             echo ""
-            echo "Kling fal.ai failed — falling back to Kling Replicate..."
+            echo "Seedance fal.ai failed — falling back to Kling Replicate..."
             PROVIDER="replicate"
             generate_replicate_kling
         fi
         ;;
-    replicate)
-        generate_replicate
+    kling-replicate)
+        # Emergência: vai direto para Kling 3 no Replicate
+        generate_replicate_kling
         ;;
     *)
-        echo "Error: unknown provider '$PROVIDER' (use 'fal', 'kling', or 'replicate')" >&2
+        echo "Error: unknown provider '$PROVIDER' (use 'fal', 'seedance', or 'kling-replicate')" >&2
         exit 1
         ;;
 esac
