@@ -85,7 +85,7 @@ Use `scripts/post-production.sh` for automated color grade, grain, and frame rat
 
 Read `references/post-production.md` for the full realism stack: color grade, grain (the 4K upscale trick), skin texture, frame rate lock, audio realism, lighting consistency.
 
-If mixing Sora + Kling clips, pay special attention to cross-engine color matching — see `references/orchestrator.md` (in `b-roll/references/`).
+If mixing Sora + Seedance clips (ou eventuais Kling 3 legados), pay special attention to cross-engine color matching — see `references/orchestrator.md` (in `b-roll/references/`).
 
 **The phone test:** watch the final video on a phone screen, in the app, scrolling past it like a user. If anything pings as AI, fix it.
 
@@ -150,7 +150,7 @@ The older `scripts/generate-caption.py` still supports pill-style (white rounded
 - **No background pills** for TikTok-native text — stroke only.
 - **Always encode with compatible defaults** after caption burn: `-profile:v main -pix_fmt yuv420p -movflags +faststart`
 
-Resolution note: Sora outputs 720x1280, Kling outputs 1076x1924. Always normalize to one resolution before stitching.
+Resolution note: Sora 2 outputs 720x1280; Seedance 2.0 @720p outputs 720x1280 (idem); Seedance @1080p outputs 1080x1920; Kling 3 (legacy) outputs 1076x1924. Always normalize to one resolution before stitching.
 
 Requires `ffmpeg` and `python3` with Pillow (auto-installed if missing).
 

@@ -36,7 +36,7 @@ usage() {
     echo "  --aspect-ratio RATIO  9:16, 16:9, or 1:1 (default: 9:16)"
     echo "  --character-id ID     Sora character ID"
     echo "  --pro                 Use Pro model tier"
-    echo "  --provider NAME       fal, kling, or replicate (passed to generate-clip.sh)"
+    echo "  --provider NAME       fal | seedance | kling-replicate (passed to generate-clip.sh)"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     exit 1
@@ -79,21 +79,42 @@ if [[ ! -f "$LAST_FRAME" ]]; then
 fi
 echo "Last frame extracted: $(du -h "$LAST_FRAME" | cut -f1)"
 
-# Step 2: Upload last frame to get a public URL
-# Replicate's file upload endpoint
-echo "Uploading frame to Replicate..."
-UPLOAD_RESPONSE=$(curl -s -X POST "https://api.replicate.com/v1/files" \
-    -H "Authorization: Token $REPLICATE_API_TOKEN" \
-    -F "content=@$LAST_FRAME" \
-    -F "content_type=image/png")
+# Step 2: Upload last frame to get a public URL or data URI
+# Refator 2026-04: prefere fal.ai storage (mesma chave do gateway de vídeo).
+# Fallback Replicate file upload se FAL_KEY ausente ou upload falhar.
+FRAME_URL=""
 
-FRAME_URL=$(echo "$UPLOAD_RESPONSE" | jq -r '.urls.get // empty')
-if [[ -z "$FRAME_URL" ]]; then
-    echo "Error uploading frame:" >&2
-    echo "$UPLOAD_RESPONSE" | jq . >&2
-    exit 1
+if [[ -n "${FAL_KEY:-}" ]]; then
+    echo "Uploading frame to fal.ai storage..."
+    UPLOAD_RESPONSE=$(curl -s -X POST "https://rest.alpha.fal.ai/storage/upload/initiate" \
+        -H "Authorization: Key $FAL_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg ct "image/png" --arg fn "last-frame.png" '{content_type: $ct, file_name: $fn}')")
+    UPLOAD_URL=$(echo "$UPLOAD_RESPONSE" | jq -r '.upload_url // empty')
+    FILE_URL_FAL=$(echo "$UPLOAD_RESPONSE" | jq -r '.file_url // empty')
+    if [[ -n "$UPLOAD_URL" && -n "$FILE_URL_FAL" ]]; then
+        if curl -s -X PUT "$UPLOAD_URL" -H "Content-Type: image/png" --data-binary @"$LAST_FRAME" -o /dev/null; then
+            FRAME_URL="$FILE_URL_FAL"
+            echo "fal.ai frame URL: $FRAME_URL"
+        fi
+    fi
 fi
-echo "Frame URL: $FRAME_URL"
+
+if [[ -z "$FRAME_URL" && -n "${REPLICATE_API_TOKEN:-}" ]]; then
+    echo "Falling back to Replicate file upload..."
+    UPLOAD_RESPONSE=$(curl -s -X POST "https://api.replicate.com/v1/files" \
+        -H "Authorization: Token $REPLICATE_API_TOKEN" \
+        -F "content=@$LAST_FRAME" \
+        -F "content_type=image/png")
+    FRAME_URL=$(echo "$UPLOAD_RESPONSE" | jq -r '.urls.get // empty')
+    [[ -n "$FRAME_URL" ]] && echo "Replicate frame URL: $FRAME_URL"
+fi
+
+if [[ -z "$FRAME_URL" ]]; then
+    # Last resort: base64 data URI (works for fal endpoints that accept it)
+    echo "Both upload paths failed — falling back to base64 data URI"
+    FRAME_URL="data:image/png;base64,$(base64 -w0 "$LAST_FRAME")"
+fi
 
 # Step 3: Generate extension via Sora i2v
 echo "Generating ${SECONDS_DUR}s extension..."

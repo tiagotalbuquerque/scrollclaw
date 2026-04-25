@@ -107,7 +107,7 @@ Don't insert B-roll at random — the visual-verbal alignment is what makes it f
 
 ## Resolution normalization
 
-**All clips must be the same resolution before concatenation.** Sora outputs 720x1280, Kling outputs 1076x1924 or 1080x1920. Mixed resolutions cause display issues.
+**All clips must be the same resolution before concatenation.** Sora outputs 720x1280; Seedance 2.0 outputs 720x1280 (@720p) or 1080x1920 (@1080p); Kling 3 legacy outputs 1076x1924. Mixed resolutions cause display issues.
 
 ```bash
 # Force all clips to 720x1280

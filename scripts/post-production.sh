@@ -38,8 +38,10 @@
 #
 # CROSS-ENGINE COLOR MATCHING:
 #   Sora clips tend toward darker shadows (YLOW ~12).
-#   Kling clips tend toward lifted shadows (YLOW ~25+).
-#   Use --match-to <kling_clip.mp4> when processing Sora clips in a mixed
+#   Kling 3 clips (legacy fallback) tended toward lifted shadows (YLOW ~25+).
+#   Seedance 2.0 (new B-roll default) ainda não calibrado em produção;
+#   esperar tonalidade próxima de Kling até validação empírica.
+#   Use --match-to <broll_clip.mp4> when processing Sora clips in a mixed
 #   sequence to align the tonal range before the sequence edit.
 # =============================================================================
 
@@ -208,9 +210,11 @@ log "Grain filter: $GRAIN_FILTER (strength: $NOISE_STRENGTH)"
 # and applies colorlevels to make the target clip match that tonal profile.
 # 
 # Sora: YLOW ≈ 10-15 (deeper shadows)
-# Kling: YLOW ≈ 22-30 (lifted shadows, brighter overall)
-# 
-# When mixing engines, run Sora clips through --match-to <kling_clip> to align
+# Kling 3 (legacy): YLOW ≈ 22-30 (lifted shadows, brighter overall)
+# Seedance 2.0: tonal range não calibrado em produção; rodar --match-to em ambos
+# os lados ao misturar Sora + Seedance até validação empírica.
+#
+# When mixing engines, run Sora clips through --match-to <broll_clip> to align
 # shadow floor before stitching.
 
 COLOR_MATCH_FILTER=""
@@ -256,7 +260,7 @@ if [[ -n "$MATCH_TO" ]]; then
   # Apply as a colorlevels filter prepended to the grade
   COLOR_MATCH_FILTER="colorlevels=rimin=${CM_IMIN}:gimin=${CM_IMIN}:bimin=${CM_IMIN}:rimax=${CM_IMAX}:gimax=${CM_IMAX}:bimax=${CM_IMAX}:romin=${CM_OMIN}:gomin=${CM_OMIN}:bomin=${CM_OMIN}:romax=${CM_OMAX}:gomax=${CM_OMAX}:bomax=${CM_OMAX},"
   
-  log "Color match filter applied: Sora→Kling tonal alignment"
+  log "Color match filter applied: cross-engine tonal alignment"
 fi
 
 # ─── Build Video Filter Chain ─────────────────────────────────────────────────

@@ -18,11 +18,11 @@ AI video defaults to cinematic. Sweeping drone shots. Perfect lighting. Orchestr
 
 **Anti-polish is the product.** Every decision optimizes for "could a real person have shot this on their phone." Impressive is the enemy.
 
-**Creators are persistent.** AI creators have locked identities — same face, same hair, same build across every clip. First-frame consistency: generate one canonical face with Nano Banana, feed it to every Sora/Kling i2v generation. Read `references/creator-system.md`.
+**Creators are persistent.** AI creators have locked identities — same face, same hair, same build across every clip. First-frame consistency: generate one canonical face with Nano Banana 2 (fal.ai), feed it to every Sora 2 / Seedance 2.0 i2v generation. Read `references/creator-system.md`.
 
-**First frame controls everything.** Generate frame 1 with Nano Banana 2 (composition, character, environment, color locked), then animate with Sora 2 i2v. Text-to-video is the fallback.
+**First frame controls everything.** Generate frame 1 with Nano Banana 2 via fal.ai (composition, character, environment, color locked), then animate with Sora 2 i2v. Text-to-video is the fallback.
 
-**Save first, watch later.** Replicate URLs are ephemeral. Every output gets downloaded immediately.
+**Save first, watch later.** fal.ai CDN URLs are ephemeral. Every output gets downloaded immediately.
 
 **System not clip.** Every run leaves reusable creator profiles, prompt logs, color references. Campaign 10 takes a fraction of campaign 1.
 
@@ -56,7 +56,7 @@ Read `references/format-library.md` for shot-by-shot blueprints. Read `reference
 | 4. Format + Script | `/persona` | Choose format, write script with visual beats |
 | 5. First frame | `/first-frame` | Nano Banana 2 → canonical face image |
 | 6. Animate (A-roll) | `/animate` | Sora 2 i2v → talking head clips |
-| 7. B-roll | `/b-roll` | Kling 3 → environment/product shots |
+| 7. B-roll | `/b-roll` | Seedance 2.0 (fast tier) → environment/product shots, native audio bundled |
 | 8. Stitch + Audio | `/assemble` | Multi-clip stitching, ElevenLabs S2S voice |
 | 9. Post-production | `/assemble` | Color grade, grain, frame rate, phone test |
 | 10. Captions | `/assemble` | Native-style caption overlays (LAST step) |
@@ -84,7 +84,7 @@ Read `references/taste-calibration.md` for before/after examples that show what 
 
 **Output:** video clips (MP4), first-frame images (PNG), creator profiles, scripts, prompt logs. Default 9:16 vertical.
 
-**Env:** FAL_KEY (primary), REPLICATE_API_TOKEN (Nano Banana + fallback), ELEVENLABS_API_KEY (multi-clip voice), OPENROUTER_API_KEY (Gemini virality scoring).
+**Env (refator 2026-04):** FAL_KEY (gateway único: Sora 2 + Seedance 2.0 + Nano Banana 2), GEMINI_API_KEY (Gemini 2.5 Flash direct para virality, free tier). Optional: ELEVENLABS_API_KEY (multi-clip voice S2S), REPLICATE_API_TOKEN (first-frame fallback), OPENAI_API_KEY (alt virality via gpt-5.5).
 
 ## Brand & Campaign Context
 

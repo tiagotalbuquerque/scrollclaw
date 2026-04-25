@@ -1,11 +1,12 @@
-# Video API Reference
+# Video API Reference (refator 2026-04)
 
 Single source of truth for all video generation endpoints. Based on real testing, not documentation speculation.
 
 **A-roll primary:** fal.ai Sora 2 (talking head with synced dialogue)
-**A-roll fallback:** fal.ai Kling 3 (when Sora is unavailable/sunset)
-**Final fallback:** Replicate Kling 3 (when fal.ai is down)
-**Image generation:** Replicate only (Nano Banana first frames)
+**A-roll fallback:** fal.ai Seedance 2.0 (when Sora is unavailable/sunset) — `bytedance/seedance-2.0/image-to-video`
+**Final fallback (emergency):** Replicate Kling 3 (when fal.ai is down)
+**Image generation:** fal.ai `fal-ai/nano-banana-2` (primary) + Replicate `google/nano-banana-2` (resilience fallback)
+**Virality scoring:** Gemini 2.5 Flash direct API
 
 ---
 
@@ -129,20 +130,20 @@ The `fal-ai/sora-2/characters` endpoint exists but **blocks AI-generated faces**
 
 ---
 
-## fal.ai — Kling 3 (A-ROLL FALLBACK)
+## fal.ai — Seedance 2.0 (A-ROLL FALLBACK, refator 2026-04)
 
-Auto-fallback when Sora fails or is sunset. Use `--provider kling` to skip Sora entirely.
+Auto-fallback when Sora fails or is sunset. Use `--provider seedance` to skip Sora entirely.
 
-**Key difference from B-roll usage:** A-roll requires `generate_audio: true` for dialogue lip-sync. No content safety filter (advantage over Sora).
+**Key difference from B-roll usage:** A-roll requires `generate_audio: true` for dialogue lip-sync. Seedance 2.0 standard (não fast) é o tier para A-roll por qualidade. Filter mais permissivo que Sora.
 
 ### Endpoints
 
 | Use | Endpoint |
 |-----|----------|
-| Text-to-Video Pro | `fal-ai/kling-video/v3/pro/text-to-video` |
-| Image-to-Video Pro | `fal-ai/kling-video/v3/pro/image-to-video` |
-| Text-to-Video Standard | `fal-ai/kling-video/v3/standard/text-to-video` |
-| Image-to-Video Standard | `fal-ai/kling-video/v3/standard/image-to-video` |
+| Text-to-Video standard | `bytedance/seedance-2.0/text-to-video` |
+| Image-to-Video standard | `bytedance/seedance-2.0/image-to-video` |
+| Text-to-Video fast | `bytedance/seedance-2.0/fast/text-to-video` |
+| Image-to-Video fast | `bytedance/seedance-2.0/fast/image-to-video` |
 
 ### Queue workflow
 
@@ -153,46 +154,47 @@ Same as Sora — submit to full endpoint path, poll using the returned `status_u
 | Field | Type | Required | Values | Notes |
 |-------|------|----------|--------|-------|
 | prompt | string | yes | free text | Motion/dialogue description |
-| start_image_url | string | yes | URL | **Field is `start_image_url`** not `image_url`. First frame. |
-| duration | integer | no | 3-15 | Integer, not enum. Clips >15s are clamped. |
-| aspect_ratio | enum | no | "9:16", "16:9", "1:1" | Ignored when start_image_url provided. |
-| generate_audio | boolean | **yes for A-roll** | true | **Must be true** — A-roll needs synced dialogue audio. |
-| negative_prompt | string | no | free text | What to avoid |
+| image_url | string | yes | URL | **Field is `image_url`** (Seedance) — não `start_image_url` (Kling) |
+| duration | string | no | "4"–"15" | **String, not int** (Seedance gotcha vs Kling) |
+| aspect_ratio | enum | no | "9:16", "16:9", "1:1", "4:3", "3:4", "21:9" | More options than Kling |
+| resolution | enum | no | "480p", "720p", "1080p" | Explicit field (Kling implicit) |
+| generate_audio | boolean | **yes for A-roll** | true | Native audio bundled (no separate ElevenLabs needed) |
 
 ### Text-to-Video input schema (A-roll)
 
 | Field | Type | Required | Values | Notes |
 |-------|------|----------|--------|-------|
 | prompt | string | yes | free text | Scene + dialogue description |
-| duration | integer | no | 3-15 | Integer |
-| aspect_ratio | enum | no | "9:16", "16:9", "1:1" | Required for t2v |
-| generate_audio | boolean | **yes for A-roll** | true | **Must be true** |
-| negative_prompt | string | no | free text | |
+| duration | string | no | "4"–"15" | String |
+| aspect_ratio | enum | no | "9:16", "16:9", "1:1", "4:3", "3:4", "21:9" | |
+| resolution | enum | no | "480p", "720p", "1080p" | |
+| generate_audio | boolean | **yes for A-roll** | true | |
 
 ### Payload example (A-roll i2v)
 
 ```json
 {
   "prompt": "Camera: handheld iPhone-style front camera...\nDialogue: \"...and that is the part nobody talks about...\"\n...",
-  "start_image_url": "https://v3b.fal.media/files/.../coach-dan-frame.png",
-  "duration": 12,
+  "image_url": "https://v3b.fal.media/files/.../coach-dan-frame.png",
+  "duration": "12",
   "aspect_ratio": "9:16",
+  "resolution": "720p",
   "generate_audio": true
 }
 ```
 
 ### Duration clamping
 
-Sora supports up to 20s. Kling max is 15s. If a script requests >15s, `generate-clip.sh` automatically clamps to 15s with a warning. For longer clips, use `extend-clip.sh` to chain multiple Kling generations.
+Sora supports up to 20s. Seedance 2.0 max is 15s, min 4s. If a script requests >15s, `generate-clip.sh` automatically clamps to 15s with a warning. For longer clips, use `extend-clip.sh` to chain multiple Seedance generations.
 
-### Timing (from real testing)
+### Timing (from real testing 2026-04-25)
 
 | Type | Duration | Generation time |
 |------|----------|----------------|
-| i2v Pro 5s | 5s | ~100s |
-| t2v Pro 5s | 5s | ~80s |
+| Seedance fast t2v 5s @720p | 5s | ~92s |
+| Seedance standard t2v 5s @720p | 5s | ~120s (estimated) |
 
-Kling is **significantly faster** than Sora (~2 min vs ~5-10 min).
+Seedance is **significantly faster** than Sora (~1.5 min vs ~5-10 min).
 
 ### Response shape
 

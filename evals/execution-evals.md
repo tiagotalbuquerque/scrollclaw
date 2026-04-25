@@ -47,7 +47,7 @@ Benchmark tasks to verify the skill produces correct output at each stage.
 
 **Expected:**
 - Extracts a frame from the A-roll showing the kitchen environment
-- Feeds that frame as Kling's start_image_url
+- Feeds that frame as Seedance i2v image_url
 - B-roll matches the A-roll's floor, lighting, color temperature
 - Does NOT generate generic/stock-looking B-roll from text prompt alone
 
@@ -70,7 +70,7 @@ Benchmark tasks to verify the skill produces correct output at each stage.
 **Expected:**
 - Hook: emotive face (from hook-emotions taxonomy) + caption overlay, 3-5s
 - Hard cut to demo
-- Demo: real product footage recommended, OR Kling with environment-matched start frame
+- Demo: real product footage recommended, OR Seedance 2.0 with environment-matched start frame
 - Total: 15s max (warns if over)
 - Caption style: pill (not wall-of-text style)
 - Voice from Sora native if face talks, OR voice continues from hook over demo

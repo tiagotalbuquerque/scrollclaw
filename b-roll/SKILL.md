@@ -1,22 +1,22 @@
 ---
 name: scrollclaw-broll
-description: "Generate B-roll environment and product shots with Kling 3 via fal.ai. Environment matching, cut timing, and visual-only clips that play under continuous voice."
+description: "Generate B-roll environment and product shots with Seedance 2.0 via fal.ai. Environment matching, cut timing, and visual-only clips that play under continuous voice."
 metadata:
   openclaw:
     emoji: "🎞️"
     user-invocable: true
     triggers:
       - "b-roll"
-      - "kling video"
+      - "seedance video"
       - "environment shot"
       - "product shot"
       - "broll"
       - "b roll"
 ---
 
-# B-Roll (Kling 3)
+# B-Roll (Seedance 2.0)
 
-Kling 3 generates B-roll — environment shots, product close-ups, lifestyle moments. These are visual-only clips that play under the continuous voice track. Voice never cuts. B-roll swaps visuals only.
+Seedance 2.0 generates B-roll — environment shots, product close-ups, lifestyle moments. These are visual-only clips that play under the continuous voice track. Voice never cuts. B-roll swaps visuals only. Tier `fast` (~$0.024/s) é o default; `standard` (~$0.30/s) reserva-se a hero shots.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ Kling 3 generates B-roll — environment shots, product close-ups, lifestyle mom
 
 ## Environment Matching
 
-Extract a frame from the A-roll and use it as Kling's start image. This ensures B-roll looks like the same room — same floor, same lighting, same vibe. See `references/orchestrator.md`.
+Extract a frame from the A-roll and use it as Seedance's `image_url` for i2v. This ensures B-roll looks like the same room — same floor, same lighting, same vibe. See `references/orchestrator.md`.
 
 Generate **context-specific first frames** per scene. Don't use the podcast frame (headphones) for gym B-roll.
 
@@ -37,7 +37,7 @@ Example: If Sarah says "she finishes the whole bowl" → cut to dog finishing th
 
 ## Generation
 
-**USE `scripts/generate-broll.sh` — do NOT construct Kling API calls manually.**
+**USE `scripts/generate-broll.sh` — do NOT construct Seedance API calls manually.**
 
 ```bash
 # B-roll with environment-matched start frame (RECOMMENDED)
@@ -62,11 +62,11 @@ bash scripts/generate-broll.sh \
 
 ## API Reference
 
-Read `references/kling-api.md` for Kling 3 endpoint details, field names, and queue workflow on fal.ai.
+Read `references/seedance-api.md` for Seedance 2.0 endpoint details, schema, queue workflow on fal.ai, and pricing.
 
 ## Key Findings
 
-- Kling generates in ~100s vs Sora's 5-10 min. Use Kling for ALL B-roll.
+- Seedance 2.0 fast generates 5s in ~92s wall time vs Sora's 5-10 min. Use Seedance for ALL B-roll. Áudio nativo bundled (sem ElevenLabs S2S separado).
 - Same character face image feeds both engines for identity consistency
 - **AI cannot generate realistic app screens or UI text.** For product/app demos: use real screenshots or screen recordings.
 - The orchestrator doc (`references/orchestrator.md`) has the full A/B-roll split methodology
@@ -76,7 +76,7 @@ Read `references/kling-api.md` for Kling 3 endpoint details, field names, and qu
 ### Reads
 | File | Purpose |
 |------|---------|
-| `workspace/campaigns/<slug>/frames/environment-frame.png` | Environment-matched start frame for Kling i2v |
+| `workspace/campaigns/<slug>/frames/environment-frame.png` | Environment-matched start frame for Seedance i2v |
 | `workspace/campaigns/<slug>/clips/a-roll-*.mp4` | Source clips to extract environment frames from |
 | `workspace/campaigns/<slug>/scripts/<format>-script.md` | B-roll segments and visual cues |
 
@@ -84,7 +84,7 @@ Read `references/kling-api.md` for Kling 3 endpoint details, field names, and qu
 | File | Notes |
 |------|-------|
 | `workspace/campaigns/<slug>/clips/b-roll-01.mp4` | One file per B-roll segment |
-| `workspace/campaigns/<slug>/output-log.md` | Kling prompt, duration, provider (append-only) |
+| `workspace/campaigns/<slug>/output-log.md` | Seedance prompt, duration, provider (append-only) |
 
 ### Context loading
 
@@ -107,7 +107,7 @@ Read `references/kling-api.md` for Kling 3 endpoint details, field names, and qu
 ### Output
 - Produces: one visual-only B-roll clip per segment plus append-only generation logs
 - Format: MP4 files in `workspace/campaigns/<slug>/clips/` and rows in `output-log.md`
-- Default behavior: use Kling with an environment-matched start frame; for app demos, use real screenshots or recordings instead of AI UI generation
+- Default behavior: use Seedance 2.0 fast (i2v with environment-matched start frame); for app demos, use real screenshots or recordings instead of AI UI generation
 - Downstream use: `/assemble`
 
 ### Validation

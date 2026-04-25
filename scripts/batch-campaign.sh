@@ -37,7 +37,7 @@ usage() {
     echo "  --seconds N           Duration per clip (default: 8)"
     echo "  --dual-output         Generate both 16:9 and 9:16"
     echo "  --pro                 Use Pro model tier"
-    echo "  --provider NAME       fal, kling, or replicate (default: fal)"
+    echo "  --provider NAME       fal | seedance | kling-replicate (default: fal)"
     echo "  --character-ids FILE  JSON file mapping creator names to character_ids"
     echo "  --dry-run             Show what would be generated without running"
     exit 1

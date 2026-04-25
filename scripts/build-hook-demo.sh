@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Build a complete Hook + Demo video from components.
-# Takes a hook clip (AI face) + demo footage (screen recording or Kling clip)
+# Takes a hook clip (AI face) + demo footage (screen recording or Seedance B-roll clip)
 # and outputs a finished 15s video with captions.
 #
 # Usage:
@@ -44,7 +44,7 @@ usage() {
     echo ""
     echo "Required:"
     echo "  --hook FILE          Hook face video (AI-generated, 3-5s)"
-    echo "  --demo FILE          Demo footage (screen recording RECOMMENDED, or Kling clip)"
+    echo "  --demo FILE          Demo footage (screen recording RECOMMENDED, or Seedance B-roll clip)"
     echo "  --hook-text TEXT     Hook text overlay (use \\N for line breaks)"
     echo "  --output FILE        Output video path"
     echo ""

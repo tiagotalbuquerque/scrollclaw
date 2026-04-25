@@ -68,7 +68,7 @@ Read `references/script-voice.md`. Use exact phrases from persona research. Test
 
 **Present the script to the user for approval** before generating anything. Include the segment mapping. User can override with "skip approval" for autonomous generation.
 
-Mark the script with `[A-ROLL]` and `[B-ROLL]` tags. A-roll = Sora (talking head + dialogue). B-roll = Kling (everything else). Voice runs continuously over B-roll.
+Mark the script with `[A-ROLL]` and `[B-ROLL]` tags. A-roll = Sora (talking head + dialogue). B-roll = Seedance 2.0 (everything else). Voice runs continuously over B-roll.
 
 ## Brand Memory Integration
 

@@ -65,7 +65,7 @@ bash scripts/stitch-video.sh \
   --output workspace/campaigns/<slug>/clips/stitched.mp4
 ```
 
-Normalize resolution before stitching (Sora = 720x1280, Kling = 1076x1924).
+Normalize resolution before stitching (Sora = 720x1280, Seedance @720p = 720x1280, Seedance @1080p = 1080x1920, Kling 3 (legacy) = 1076x1924).
 
 ## Step 5: Post-Production
 

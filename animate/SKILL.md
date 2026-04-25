@@ -1,6 +1,6 @@
 ---
 name: scrollclaw-animate
-description: "Animate first frames into A-roll talking head clips. Uses Sora 2 via fal.ai (primary) with Kling 3 auto-fallback when Sora is unavailable or sunset."
+description: "Animate first frames into A-roll talking head clips. Uses Sora 2 via fal.ai (primary) with Seedance 2.0 auto-fallback when Sora is unavailable or sunset."
 metadata:
   openclaw:
     emoji: "🎥"
@@ -12,15 +12,15 @@ metadata:
       - "a-roll"
       - "talking head clip"
       - "sora video"
-      - "kling animate"
-      - "kling a-roll"
+      - "seedance animate"
+      - "seedance a-roll"
 ---
 
 # Animate (A-Roll)
 
 Turns first frames into talking head clips with synced lip movement and audio. Image-to-video is the default — text-to-video is the fallback.
 
-**Fallback chain:** Sora 2 (fal.ai) -> Kling 3 (fal.ai) -> Kling 3 (Replicate). Use `--provider kling` to skip Sora entirely (for when Sora is sunset).
+**Fallback chain (refator 2026-04):** Sora 2 (fal.ai) → Seedance 2.0 (fal.ai) → Kling 3 (Replicate, fallback emergência). Use `--provider seedance` to skip Sora entirely (for when Sora is sunset).
 
 ## Prerequisites
 
@@ -62,9 +62,9 @@ bash scripts/generate-clip.sh \
   --label a-roll-01 \
   --seconds 8 --aspect-ratio portrait
 
-# Kling direct (skip Sora — use when Sora is sunset)
+# Seedance direct (skip Sora — use when Sora is sunset)
 bash scripts/generate-clip.sh \
-  --provider kling \
+  --provider seedance \
   --image workspace/campaigns/<slug>/frames/frame1.png \
   --prompt-file workspace/campaigns/<slug>/motion-prompt.txt \
   --output workspace/campaigns/<slug>/clips/a-roll-01.mp4 \
@@ -72,9 +72,9 @@ bash scripts/generate-clip.sh \
   --label a-roll-01 \
   --seconds 8 --aspect-ratio portrait
 
-# Replicate Sora (legacy — may stop working when Sora is sunset)
+# Replicate Kling (emergência — só se fal.ai estiver fora completamente)
 bash scripts/generate-clip.sh \
-  --provider replicate \
+  --provider kling-replicate \
   --image workspace/campaigns/<slug>/frames/frame1.png \
   --prompt-file workspace/campaigns/<slug>/motion-prompt.txt \
   --output workspace/campaigns/<slug>/clips/a-roll-01.mp4 \
@@ -85,7 +85,7 @@ bash scripts/generate-clip.sh \
 
 ## API Reference
 
-Read `references/sora-api.md` for endpoint details, queue workflow, field names, and duration options. Sora fal.ai supports 4/8/12/16/20s. Kling supports 3-15s (durations >15s are auto-clamped). Replicate Sora is limited to 4/8/12.
+Read `references/sora-api.md` for endpoint details, queue workflow, field names, and duration options. Sora fal.ai supports 4/8/12/16/20s. Seedance 2.0 supports 4–15s (durations >15s são auto-clamped). Replicate Kling 3 (fallback emergência) suporta 3–15s.
 
 ## Content Filter Handling
 
@@ -93,15 +93,15 @@ Sora's content filter runs AFTER generation — can fail at 99%. If blocked:
 - Soften the motion prompt (keep first frame)
 - Remove any potentially sensitive descriptions
 - Retry with adjusted prompt
-- Or use `--provider kling` — Kling has no content safety filter
+- Or use `--provider seedance` — Seedance 2.0 tem filter mais permissivo
 
 ## Key Findings
 
 - Include actual script in Dialogue field — Sora generates synced lip movement
 - For podcast audio: describe the RESULT, not the gear
 - Keep Subject descriptions generic — the first frame already defines appearance
-- fal.ai is primary provider; Kling 3 is auto-fallback when Sora fails or is sunset
-- Use `--provider kling` to skip Sora entirely
+- fal.ai is primary gateway; Seedance 2.0 é auto-fallback quando Sora falha ou é sunset
+- Use `--provider seedance` to skip Sora entirely
 
 ## Brand Memory Integration
 

@@ -1,6 +1,6 @@
-# Video Orchestrator: Sora + Kling
+# Video Orchestrator: Sora + Seedance
 
-Two engines, one pipeline. Sora handles A-roll (talking head, synced dialogue). Kling handles B-roll (product shots, contextual scenes, demonstrations). They combine in post.
+Two engines, one pipeline. Sora handles A-roll (talking head, synced dialogue). Seedance 2.0 handles B-roll (product shots, contextual scenes, demonstrations). They combine in post.
 
 ## Why two engines
 
@@ -16,13 +16,13 @@ Two engines, one pipeline. Sora handles A-roll (talking head, synced dialogue). 
 - Consistent brand elements across shots
 - Character doing complex physical actions
 
-**Kling 3 excels at:**
+**Seedance 2.0 excels at:**
 - Element system — lock character AND product identity across shots
 - Multi-prompt sequences — choreographed shot progressions in one generation
 - Product-in-hand, product-on-surface, product-in-use scenes
 - B-roll beauty shots, demos, contextual imagery
 
-**Kling 3 struggles with:**
+**Seedance 2.0 struggles with:**
 - Natural-sounding dialogue delivery (voice IDs are inconsistent)
 - The ultra-casual UGC talking-head feel (tends more polished)
 
@@ -38,7 +38,7 @@ The creator talking to camera. This is the anchor footage.
 | Reaction shots | First frame with expression → Sora i2v with subtle motion |
 | Opening/closing address | Same creator, same setting, different energy |
 
-### B-roll: Kling 3
+### B-roll: Seedance 2.0
 Everything that supports the story but doesn't have the creator talking to camera.
 
 | What | How |
@@ -56,8 +56,8 @@ Everything that supports the story but doesn't have the creator talking to camer
 1. Build creator profile (identity lock + voice personality)
 2. Generate character reference image with Nano Banana → this becomes **both:**
    - Sora first frame source
-   - Kling @Element1 reference
-3. Get product images → Kling @Element2
+   - Seedance i2v @Element1 reference
+3. Get product images → Seedance i2v @Element2
 4. Write the full script with A/B-roll markers
 
 ### Phase 2: Script with A/B-roll markers
@@ -75,12 +75,12 @@ years I'm leaving at a normal hour."
 night. not coaching. not programming. chasing people 
 for money."
 
-[B-ROLL: Kling — back office, billing screen]
+[B-ROLL: Seedance — back office, billing screen]
 (Show: cluttered back office, laptop open with billing 
 dashboard, @Element1 character hunched over keyboard, 
 late at night. Overhead fluorescent light.)
 
-[B-ROLL: Kling — phone notification montage]  
+[B-ROLL: Seedance — phone notification montage]  
 (Show: phone screen with failed payment notifications, 
 @Element2 app dashboard showing resolved payments. 
 Close-up, hands holding phone.)
@@ -90,7 +90,7 @@ Close-up, hands holding phone.)
 another one. but um. failed payments just handled 
 themselves overnight. I didn't get a single text."
 
-[B-ROLL: Kling — product in use, calm]
+[B-ROLL: Seedance — product in use, calm]
 (Show: @Element1 character walking out of gym, keys in 
 hand, parking lot, normal hour. @Element2 app visible 
 on phone briefly. Evening light, not late night.)
@@ -106,8 +106,8 @@ Generate each A-ROLL section as a separate Sora clip:
 2. Structured motion prompt with dialogue
 3. Download and save immediately
 
-### Phase 4: Generate B-roll (Kling)
-Generate each B-ROLL section via Kling 3:
+### Phase 4: Generate B-roll (Seedance 2.0)
+Generate each B-ROLL section via Seedance 2.0 (fast tier default):
 1. Use character Element reference (same face as Sora clips)
 2. Product Element for product shots
 3. Multi-prompt for sequences
@@ -136,7 +136,7 @@ This is better than using the same original first frame for both clips (which ca
 
 **The order of steps 5 and 6 is critical.** Post-production first, captions last. Tested: applying captions before post-production causes grain/color grade to blur the clean caption pills.
 
-## Kling 3 API
+## Seedance 2.0 API
 
 See `references/sora-api.md` for complete endpoint reference with verified field names.
 
@@ -144,58 +144,58 @@ See `references/sora-api.md` for complete endpoint reference with verified field
 
 ```bash
 # i2v with character face as start frame
-curl -s -X POST "https://queue.fal.run/fal-ai/kling-video/v3/pro/image-to-video" \
+curl -s -X POST "https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video" \
   -H "Authorization: Key $FAL_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "...", "start_image_url": "https://...", "duration": 5, "aspect_ratio": "9:16", "generate_audio": true}'
+  -d '{"prompt": "...", "image_url": "https://...", "duration": "5", "aspect_ratio": "9:16", "generate_audio": true}'
 
 # t2v faceless B-roll (no face reference needed)
-curl -s -X POST "https://queue.fal.run/fal-ai/kling-video/v3/pro/text-to-video" \
+curl -s -X POST "https://queue.fal.run/bytedance/seedance-2.0/fast/text-to-video" \
   -H "Authorization: Key $FAL_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "...", "duration": 5, "aspect_ratio": "9:16", "generate_audio": true}'
+  -d '{"prompt": "...", "duration": "5", "aspect_ratio": "9:16", "generate_audio": true}'
 ```
 
-**Critical field name:** `start_image_url` (NOT `start_image`) on fal.ai.
+**Critical field name:** `image_url` (NOT `start_image`) on fal.ai.
 
-### Kling on Replicate (fallback)
+### Kling 3 on Replicate (legacy emergency fallback)
 
-Use `kwaivgi/kling-v3-omni-video` for `reference_images` + `<<<image_N>>>` template support. Field name is `start_image` (NOT `start_image_url`) on Replicate.
+Use `kwaivgi/kling-v3-omni-video` for `reference_images` + `<<<image_N>>>` template support. Field name is `start_image` (NOT `image_url`) on Replicate.
 
 ### Speed advantage
-Kling generates in ~100s vs Sora's 5-10 min. Use Kling for all B-roll.
+Seedance 2.0 fast generates in ~92s vs Sora's 5-10 min. Use Seedance 2.0 for all B-roll.
 
 ## B-roll environment matching (tested — critical for quality)
 
-**Kling B-roll generated from text prompts alone looks like stock footage.** It creates a generic version of the scene that doesn't match the A-roll's specific environment — different floor, different lighting, different color temperature. This breaks immersion immediately.
+**Seedance B-roll generated from text prompts alone tends toward generic. Use i2v from A-roll frame..** It creates a generic version of the scene that doesn't match the A-roll's specific environment — different floor, different lighting, different color temperature. This breaks immersion immediately.
 
-**The fix:** Extract a frame from the A-roll video and use it as Kling's `start_image_url`. Kling then generates the B-roll scene starting FROM the A-roll's actual environment — same floor, same lighting, same color world.
+**The fix:** Extract a frame from the A-roll video and use it as Seedance.s `image_url`. Seedance then generates the B-roll scene starting FROM the A-roll's actual environment — same floor, same lighting, same color world.
 
 ```bash
 # Extract a frame showing the environment (not the face)
 ffmpeg -i aroll.mp4 -ss 7 -frames:v 1 kitchen-frame.png
 
-# Use as Kling start frame
-curl -X POST "https://queue.fal.run/fal-ai/kling-video/v3/pro/image-to-video" \
-  -d '{"prompt": "dog eating from bowl on kitchen floor...", "start_image_url": "kitchen-frame.png", ...}'
+# Use as Seedance start frame
+curl -X POST "https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video" \
+  -d '{"prompt": "dog eating from bowl on kitchen floor...", "image_url": "kitchen-frame.png", ...}'
 ```
 
-Pick a frame that shows the environment clearly — floor, lighting, background objects. The A-roll frame anchors Kling to the right visual world.
+Pick a frame that shows the environment clearly — floor, lighting, background objects. The A-roll frame anchors Seedance to the right visual world.
 
 ## Color consistency across engines
 
-Sora and Kling produce different color profiles. This must be corrected in post:
+Sora and Seedance produce different color profiles. This must be corrected in post:
 
 1. **Establish the look from Sora A-roll** — the talking head sets the color world
-2. **Grade Kling B-roll to match** — adjust saturation, contrast, temperature
+2. **Grade Seedance B-roll to match** — adjust saturation, contrast, temperature
 3. **Apply shared grain layer** — same grain profile across all clips
-4. **Match shadow density** — Sora tends darker shadows, Kling tends lifted
+4. **Match shadow density** — Sora tends darker shadows; Seedance tonalidade ainda em calibração (Kling 3 legacy era lifted)
 
 The post-production pass from `post-production.md` handles this, but pay special attention to cross-engine matching.
 
 ## Character consistency across engines
 
-The same person must look the same in Sora clips and Kling clips:
+The same person must look the same in Sora clips and Seedance clips:
 
 1. **Generate MULTIPLE context-specific first frames** with Nano Banana — one per setting
    - Podcast frame: headphones, mic, studio lighting
@@ -215,11 +215,11 @@ AI cannot generate realistic app screens, UI, or text. It will always look garbl
 **For product/app shots:**
 1. **Use real screenshots** — capture the actual app/dashboard
 2. **Composite in post** — generate the hands-holding-phone B-roll, then overlay the real screenshot onto the phone screen area
-3. **Or use as Kling reference image** — pass the real screenshot as `start_image_url` so Kling places it in context
+3. **Or use as Seedance reference image** — pass the real screenshot as `image_url` so Seedance places it in context
 4. **Never rely on AI to generate UI text** — it will always look wrong
 
 **For notification-style B-roll (phone buzzing with alerts):**
-- Generate the physical scene (hands, phone, desk, lighting) with Kling
+- Generate the physical scene (hands, phone, desk, lighting) with Seedance
 - The phone screen content should look like **native iPhone UI** — not generic app screens
 - Best approach: composite a real iPhone notification screenshot onto the phone screen in post
 - If generating with AI, prompt for "phone screen lighting up" without specifying text content — let the glow be the content, not readable text

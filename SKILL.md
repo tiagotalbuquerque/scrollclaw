@@ -33,7 +33,7 @@ Brand + Audience
 /persona    → Persona research, creator profiles, approved script
 /first-frame → Canonical face image (Nano Banana 2)
 /animate    → A-roll talking head clips (Sora 2 i2v)
-/b-roll     → Environment + product shots (Kling 3)
+/b-roll     → Environment + product shots (Seedance 2.0)
 /assemble   → Stitch + unified voice + post-production + captions
 /score      → Virality gate (70+ to publish)
       ↓
@@ -57,7 +57,7 @@ When the user invokes ScrollClaw or asks about UGC video, route to the right sub
 | "Research this brand" / "Create a creator profile" / "Write a script" | `/persona` |
 | "Generate the first frame" / "Make a face image" / "Nano Banana" | `/first-frame` |
 | "Animate this" / "Make a talking head clip" / "Sora" / "A-roll" | `/animate` |
-| "Generate B-roll" / "Product shot" / "Kling" | `/b-roll` |
+| "Generate B-roll" / "Product shot" / "Seedance" | `/b-roll` |
 | "Stitch the clips" / "Add captions" / "Post-production" / "Assemble" | `/assemble` |
 | "Score this video" / "Is this ready to publish?" | `/score` |
 | "Run the full pipeline" | Start at `/persona`, proceed sequentially |
@@ -117,10 +117,11 @@ bash scripts/check-deps.sh
 
 | Key | Required | Used by |
 |-----|----------|---------|
-| `FAL_KEY` | Yes | Sora 2 (A-roll) + Kling 3 (B-roll) |
-| `REPLICATE_API_TOKEN` | Yes | Nano Banana (first frames) |
-| `OPENROUTER_API_KEY` | Recommended | Gemini (virality scoring) |
+| `FAL_KEY` | **Yes** | Gateway único: Sora 2 (A-roll) + Seedance 2.0 (B-roll) + Nano Banana 2 (first frames) |
+| `GEMINI_API_KEY` | **Yes** | Gemini 2.5 Flash direct (virality scoring, free tier) |
 | `ELEVENLABS_API_KEY` | Optional | Multi-clip voice consistency (S2S) |
+| `REPLICATE_API_TOKEN` | Optional | First-frame fallback (mesma Nano Banana 2) se fal.ai degradado |
+| `OPENAI_API_KEY` | Optional | Alt para virality (`SCORE_PROVIDER=openai`, gpt-5.5) |
 
 ---
 
@@ -140,7 +141,7 @@ bash scripts/check-deps.sh
 ## Key Findings (from testing)
 
 - Sora's native voice > ElevenLabs TTS for talking head. TTS sounds fake.
-- B-roll must be environment-matched. Extract a frame from A-roll → feed to Kling.
+- B-roll must be environment-matched. Extract a frame from A-roll → feed to Seedance i2v.
 - Captions go LAST — after post-production. Grain degrades caption pills.
 - AI cannot generate realistic app screens. Use real screenshots.
 - ~1 in 3 Sora generations have hand artifacts. Reroll, don't fix the prompt.
