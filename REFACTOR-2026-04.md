@@ -4,17 +4,16 @@ Fork: `tiagotalbuquerque/scrollclaw` (origin) ← upstream `TheMattBerman/scroll
 
 ## Objetivos
 
-1. **Eliminar Replicate** — first frame sai de `google/nano-banana-2` (proxy) para Gemini direct (`gemini-3-pro-image-preview`).
-2. **Eliminar OpenRouter** — virality scoring vai direto para Gemini API (default) ou OpenAI (alt).
+1. ~~**Eliminar Replicate** — first frame sai de `google/nano-banana-2` (proxy) para Gemini direct (`gemini-3-pro-image-preview`).~~ **REVERTIDO 2026-04-25:** Gemini API exige billing no Google Cloud para modelos de imagem (free tier = 0). Operador optou por manter Replicate como proxy para preservar free tier dos outros serviços Google. Modelo `google/nano-banana-2` no Replicate é o mesmo Nano Banana 2 do Google, só com gateway diferente — qualidade idêntica, custo ~27× menor que API direta ($0.005/img vs $0.134).
+2. **Eliminar OpenRouter** — virality scoring vai direto para Gemini API (default, modelos texto rodam free tier) ou OpenAI (alt).
 3. **Substituir Kling 3 → Seedance 2.0** para B-roll (mantém fal.ai como gateway, troca de model slug).
-4. **Adicionar ElevenLabs** com chave da prod (a recuperar do operador — busca filesystem em prod não encontrou).
+4. **Adicionar ElevenLabs** — chave recuperada de `~/.config/acessoverde/av-video-keys.env` ✅.
 
 ## Mapa de substituições
 
 | Etapa | Hoje (upstream) | Refator (este fork) | Mudança de custo |
 |---|---|---|---|
-| First frame | Replicate `google/nano-banana-2` (~$0.005/img) | Gemini direct `gemini-3-pro-image-preview` ($0.134/img @1–2K) | **+27×** — usuário aceitou em sessão prévia (Gemini 3 Pro Image > Replicate proxy em qualidade e text rendering) |
-| First frame (alt cheap) | — | `gemini-2.5-flash-image` ($0.039/img) | Para iteração rápida; selecionável via env `FIRST_FRAME_MODEL` |
+| First frame | Replicate `google/nano-banana-2` (~$0.005/img) | **Mantém** Replicate `google/nano-banana-2` | Sem mudança — Gemini direto exige billing no GCP, operador prefere preservar free tier de outros serviços |
 | A-roll Talking Head | Sora 2 via fal.ai (~$0.10–0.15/s) | **Mantém** Sora 2 via fal.ai | Sem mudança — Sora native voice + lip sync ainda é melhor que TTS + V2V |
 | A-roll fallback | Kling 3 via fal.ai | Seedance 2.0 standard via fal.ai (~$0.30/s) ou Kling 3 (~$0.10/s) | Configurável; default Seedance pela qualidade + áudio nativo bundled |
 | B-roll | Kling 3 via fal.ai (`fal-ai/kling-video/v3/pro`) | Seedance 2.0 fast via fal.ai (`bytedance/seedance-2.0/fast/text-to-video` ~$0.024/s ou `image-to-video` ~$0.15/s) | **Mais barato** no tier fast; 480/720/1080p, áudio nativo grátis |
@@ -24,11 +23,11 @@ Fork: `tiagotalbuquerque/scrollclaw` (origin) ← upstream `TheMattBerman/scroll
 ## Arquivos a tocar (10)
 
 ### Bloco 1 — Configuração
-- `scripts/check-deps.sh` — remove `REPLICATE_API_TOKEN` obrigatório; adiciona `GEMINI_API_KEY` obrigatório; mantém `FAL_KEY` obrigatório; opcional `OPENAI_API_KEY` (se virality usar GPT-5.5) e `ELEVENLABS_API_KEY`.
+- `scripts/check-deps.sh` — adiciona `GEMINI_API_KEY` obrigatório (virality scoring); mantém `REPLICATE_API_TOKEN` obrigatório (first frame); mantém `FAL_KEY` obrigatório; opcional `OPENAI_API_KEY` e `ELEVENLABS_API_KEY` (chave já em `~/.config/acessoverde/av-video-keys.env`).
 - `.env.example` — criar com novo conjunto de chaves.
 
-### Bloco 2 — First frame (Replicate → Gemini direct)
-- `scripts/generate-first-frame.py` — reescrita para chamar Gemini API (`generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent`) com `inlineData` parts no response. Modelo default: `gemini-3-pro-image-preview`. Env override: `FIRST_FRAME_MODEL`.
+### Bloco 2 — First frame (mantém Replicate)
+- ~~Reescrita para Gemini direct~~ **Revertido 2026-04-25** — billing no GCP exigido. Replicate fica como gateway. Sem alteração no código. Commit fc53966 revertido (arquivo restaurado de commit anterior).
 
 ### Bloco 3 — Vídeo (Kling → Seedance 2.0)
 - `scripts/generate-broll.sh` — troca endpoint `fal-ai/kling-video/v3/pro` por `bytedance/seedance-2.0/fast` (default) e `bytedance/seedance-2.0` (pro). Adiciona flag `--quality fast|standard`.
