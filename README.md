@@ -40,9 +40,9 @@ Brand + Audience
 │  1. Persona research        │  ← mines real reviews for exact language
 │  2. Creator profile         │  ← persistent AI "creator" with locked identity
 │  3. Format + script         │  ← 6 formats with shot-by-shot enforcement
-│  4. First frame (Nano Banana)│  ← iPhone-realistic, not AI-looking
-│  5. A-roll (Sora 2 → Kling 3)│ ← talking head with synced voice + lip sync
-│  6. B-roll (Kling 3)       │  ← fast contextual scenes, env-matched
+│  4. First frame (Nano Banana 2 via fal.ai)│ ← iPhone-realistic, not AI-looking
+│  5. A-roll (Sora 2 → Seedance 2.0)│ ← talking head with synced voice + lip sync
+│  6. B-roll (Seedance 2.0 fast) │ ← fast contextual scenes, env-matched, audio bundled
 │  7. Audio orchestration     │  ← native voice, continuous over B-roll
 │  8. Post-production         │  ← color grade, grain, frame rate
 │  9. Captions                │  ← native platform-style overlays
@@ -69,12 +69,15 @@ Scroll-stopping UGC video
 
 | Key | Required | What it does |
 |-----|----------|-------------|
-| `FAL_KEY` | Yes | Sora 2 (talking head video) + Kling 3 (B-roll) via fal.ai |
-| `REPLICATE_API_TOKEN` | Yes | Nano Banana (first frame image generation) |
-| `OPENROUTER_API_KEY` | Recommended | Gemini via OpenRouter (virality scoring + analysis) |
-| `ELEVENLABS_API_KEY` | Optional | Only for multi-clip voice consistency (S2S) |
+| `FAL_KEY` | **Yes** | Gateway único: Sora 2 (A-roll) + Seedance 2.0 (B-roll) + Nano Banana 2 (first frame) |
+| `GEMINI_API_KEY` | **Yes** | Gemini 2.5 Flash via API direta (virality scoring, free tier sem billing) |
+| `ELEVENLABS_API_KEY` | Optional | Multi-clip voice consistency via S2S |
+| `REPLICATE_API_TOKEN` | Optional | Fallback de resiliência para first frame se fal.ai estiver degradado |
+| `OPENAI_API_KEY` | Optional | Alt para virality scoring via gpt-5.5 (`SCORE_PROVIDER=openai`) |
 
-Get keys: [fal.ai](https://fal.ai/dashboard/keys) · [Replicate](https://replicate.com/account/api-tokens) · [OpenRouter](https://openrouter.ai/keys) · [ElevenLabs](https://elevenlabs.io/app/settings/api-keys)
+> **Refator 2026-04:** OpenRouter eliminado (chamada direta Gemini), Replicate movido para fallback opcional, fal.ai consolidou todo o pipeline de mídia.
+
+Get keys: [fal.ai](https://fal.ai/dashboard/keys) · [Google AI Studio](https://aistudio.google.com/apikey) · [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) · [Replicate](https://replicate.com/account/api-tokens)
 
 ### System requirements
 
@@ -104,16 +107,16 @@ bash scripts/check-deps.sh
 4. **Pick a format** — the skill recommends one based on your goal
 5. **Approve the script** — it writes one mapped to the format's shot breakdown
 6. **Generate the first frame** — review it before committing to video
-7. **Generate video + B-roll** — Sora 2 (or Kling 3 fallback) for talking head, Kling for B-roll scenes
+7. **Generate video + B-roll** — Sora 2 (or Seedance 2.0 fallback) for talking head, Seedance 2.0 fast for B-roll scenes
 8. **Post-production + captions** — automated color grade, grain, caption overlay
 9. **Virality score** — only publish if it scores 70+
 
 ## Key findings from testing
 
-- **Sora 2 API is being deprecated.** Kling 3 is the primary fallback and may become the default A-roll provider. The pipeline handles this automatically via `generate-clip.sh`, or use `--provider kling` to skip Sora entirely.
-- **Kling 3 is the go-to for B-roll AND A-roll fallback.** It has no content safety filter, supports 3–15s durations, and produces consistent results for both talking head and environment shots.
+- **Sora 2 API is being deprecated.** Seedance 2.0 is the primary fallback and may become the default A-roll provider. The pipeline handles this automatically via `generate-clip.sh`, or use `--provider seedance` to skip Sora entirely.
+- **Seedance 2.0 is the go-to for B-roll AND A-roll fallback.** Native audio bundled, 4–15s durations, 480/720/1080p, content filter mais permissivo. Tier `fast` (~$0.024/s) é default para B-roll.
 - **Sora's native voice is always better than ElevenLabs TTS** for talking head. TTS sounds fake. Sora does voice + lip sync together.
-- **B-roll must be environment-matched.** Extract a frame from the A-roll → feed to Kling. Generic B-roll looks like stock footage.
+- **B-roll must be environment-matched.** Extract a frame from the A-roll → feed to Seedance i2v. Generic B-roll looks like stock footage.
 - **Captions go LAST** — after post-production. Grain degrades caption pills.
 - **AI cannot generate realistic UI/app screens.** Use real screenshots for demos.
 - **Describe audio by how it sounds, not the gear.** "Clean, natural, close and present" works. "Shure SM7B" doesn't.
@@ -155,15 +158,15 @@ scrollclaw/
 │   └── references/
 │       ├── first-frame-prompting.md
 │       └── first-frame-psychology.md
-├── animate/                    Step 3: A-roll (Sora 2 → Kling 3)
+├── animate/                    Step 3: A-roll (Sora 2 → Seedance 2.0)
 │   ├── SKILL.md
 │   └── references/
 │       ├── motion-prompting.md
 │       └── sora-api.md
-├── b-roll/                     Step 4: B-roll (Kling 3)
+├── b-roll/                     Step 4: B-roll (Seedance 2.0)
 │   ├── SKILL.md
 │   └── references/
-│       ├── kling-api.md
+│       ├── seedance-api.md
 │       └── orchestrator.md
 ├── assemble/                   Step 5: Stitch, post, captions, or full-assemble
 │   ├── SKILL.md
