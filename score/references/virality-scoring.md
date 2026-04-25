@@ -18,7 +18,28 @@ Score each 0-100, then average.
 
 ## Scoring prompt
 
-Use a vision model (Gemini Flash, Claude) to score the final video. Extract 5 evenly-spaced frames if scoring from frames only.
+Use a multimodal model to score the final video. **Default: Gemini 2.5 Flash** via Google AI Studio API direct (`generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY`) — roda no free tier, sem billing. Validado em smoke test 2026-04-25 retornando JSON estruturado com 7 scores + weighted + GO/NO-GO + fix concreto.
+
+Pode subir para `gemini-2.5-pro` ou `gemini-3-pro` quando billing GCP estiver ativo (qualidade maior, mas Flash basta para scoring objetivo).
+
+Aceita vídeo MP4 nativo via Files API (upload do mp4 antes do generateContent) ou frames extraídos (ffmpeg extrai 5 evenly-spaced).
+
+Alt: GPT-5.5 via OpenAI API (`SCORE_PROVIDER=openai` env). Aceita só frames (não vídeo nativo) — extrair 5 antes da chamada.
+
+OpenRouter foi removido no refator 2026-04 — chamadas diretas reduzem 1 hop e custo de proxy.
+
+### Request shape (Gemini direct)
+
+```bash
+curl -s "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contents":[{"parts":[{"text":"<scoring prompt>"}]}],
+    "generationConfig":{"responseMimeType":"application/json"}
+  }'
+```
+
+Use `responseMimeType: application/json` para forçar saída parseável. Para scoring com vídeo nativo, adicione `{"fileData": {"mimeType":"video/mp4","fileUri":"<files-api-uri>"}}` no parts array.
 
 ```
 Score this UGC video against 7 criteria, each 0-100.
