@@ -35,18 +35,19 @@ if [[ -n "${FAL_KEY:-}" ]]; then
   pass "FAL_KEY is set"
 else
   fail "FAL_KEY is missing"
+  echo "       → fal.ai = gateway único: Sora 2 (A-roll), Seedance 2.0 (B-roll), Nano Banana 2 (first frame)"
   echo "       → Get your key at: https://fal.ai/dashboard/keys"
   echo "       → Add to ~/.bashrc: export FAL_KEY=\"your-key\""
   echo "       → Then run: source ~/.bashrc"
 fi
 
-if [[ -n "${REPLICATE_API_TOKEN:-}" ]]; then
-  pass "REPLICATE_API_TOKEN is set"
+if [[ -n "${GEMINI_API_KEY:-}" || -n "${GOOGLE_API_KEY:-}" ]]; then
+  pass "GEMINI_API_KEY is set (virality scoring via Gemini text models, free tier)"
 else
-  fail "REPLICATE_API_TOKEN is missing"
-  echo "       → Get your token at: https://replicate.com/account/api-tokens"
-  echo "       → Add to ~/.bashrc: export REPLICATE_API_TOKEN=\"r8_your-token\""
-  echo "       → Then run: source ~/.bashrc"
+  fail "GEMINI_API_KEY is missing"
+  echo "       → Used for virality scoring. Text models run on free tier — no billing required."
+  echo "       → Get your key at: https://aistudio.google.com/apikey"
+  echo "       → Add to ~/.bashrc: export GEMINI_API_KEY=\"your-key\""
 fi
 
 # ─────────────────────────────────────────────
@@ -54,6 +55,15 @@ fi
 # ─────────────────────────────────────────────
 
 header "Optional API Keys"
+
+if [[ -n "${REPLICATE_API_TOKEN:-}" ]]; then
+  pass "REPLICATE_API_TOKEN is set (first-frame fallback enabled)"
+else
+  warn "REPLICATE_API_TOKEN is not set"
+  info "Optional fallback for first-frame if fal.ai is degraded. Same model (Google Nano Banana 2)."
+  echo "       → Get your token at: https://replicate.com/account/api-tokens"
+  echo "       → Add to ~/.bashrc: export REPLICATE_API_TOKEN=\"r8_your-token\""
+fi
 
 if [[ -n "${ELEVENLABS_API_KEY:-}" ]]; then
   pass "ELEVENLABS_API_KEY is set (multi-clip voice consistency enabled)"
@@ -63,6 +73,13 @@ else
   info "Single-clip talking head works without it (uses Sora's built-in audio)."
   echo "       → Get your key at: https://elevenlabs.io/app/settings/api-keys"
   echo "       → Add to ~/.bashrc: export ELEVENLABS_API_KEY=\"your-key\""
+fi
+
+if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  pass "OPENAI_API_KEY is set (alternative virality scorer via gpt-5.5)"
+else
+  warn "OPENAI_API_KEY is not set"
+  info "Optional alt for virality scoring. Gemini default. Set SCORE_PROVIDER=openai to use."
 fi
 
 # ─────────────────────────────────────────────
@@ -91,8 +108,9 @@ else
 fi
 
 # Check drawtext filter (needs libfreetype)
+# NOTE: avoid `grep -q` here — pipefail + early stdin close = SIGPIPE 141 false-fail.
 if [[ -x "$FFMPEG_PATH" ]]; then
-  if "$FFMPEG_PATH" -filters 2>/dev/null | grep -q "drawtext"; then
+  if [[ -n "$("$FFMPEG_PATH" -filters 2>/dev/null | grep "drawtext" || true)" ]]; then
     pass "ffmpeg has drawtext filter (libfreetype enabled)"
   else
     fail "ffmpeg is missing drawtext filter (libfreetype not compiled in)"
