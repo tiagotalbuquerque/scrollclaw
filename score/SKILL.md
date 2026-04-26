@@ -39,16 +39,32 @@ Score every video before publishing. Read `references/virality-scoring.md` for t
 
 ## Process
 
-1. Watch the final video on a phone screen, in-app, scrolling past it like a user
-2. Score each dimension independently
-3. Calculate average
-4. If below threshold, identify the weakest dimensions
-5. Route back to the appropriate skill:
-   - Hook/scroll-stop weak → `/first-frame` (regenerate canonical face)
-   - Pacing/completion weak → `/persona` (restructure script)
+Use the canonical script `score/scripts/score-video.py` — extracts evenly-spaced frames, builds the rubric prompt, calls a vision model (Gemini Flash by default), writes the JSON score card.
+
+```bash
+python3 score/scripts/score-video.py \
+  --video workspace/campaigns/<slug>/clips/final-01.mp4 \
+  --brief workspace/campaigns/<slug>/brief.md \
+  --transcript workspace/campaigns/<slug>/transcript.txt \
+  --platform "Instagram Reels paid Meta" \
+  --audience "<ICP description>" \
+  --output workspace/campaigns/<slug>/scores/score-01.json
+```
+
+Or via JSON config (every CLI flag has a config-file equivalent — see `score-video.py` docstring). Brand-agnostic: video, brief, transcript, audience, platform, model are all config-driven. Same script serves any campaign.
+
+After scoring, route based on threshold:
+
+1. Weighted ≥ 70 → ship (subject to human approval gate per campaign policy).
+2. Weighted 60-69 → polish; identify weakest dimensions and route back:
+   - Hook / scroll-stop weak → `/first-frame` (regenerate canonical face)
+   - Pacing / completion weak → `/persona` (restructure script)
    - Emotional impact weak → `/persona` (better language from research)
-   - Text readability weak → `/assemble` (fix captions)
-   - Audio/voice issues → `/assemble` (re-run S2S)
+   - Text readability weak → `/assemble` (fix captions — usually `burn-captions.py` config)
+   - Audio / voice issues → `/assemble` (re-run S2S)
+3. Weighted < 60 OR Hook < 50 → regenerate; don't polish a bad clip.
+
+The script auto-applies the hard gate (Hook < 50 → NO-GO) and the weighted formula from `references/virality-scoring.md`.
 
 ## Brand Memory Integration
 
