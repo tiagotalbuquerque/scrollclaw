@@ -44,8 +44,17 @@ JSON config format:
         "y_start": 280,
         "line_height": 50,
         "width": 720,
-        "height": 1280
+        "height": 1280,
+        "highlights": [
+            {"text": "ANVISA", "fill": [125, 217, 155, 255]},
+            {"text": "20-30 DIAS", "fill": [125, 217, 155, 255]}
+        ]
     }
+
+Inline highlights: each highlight matches case-insensitive substring on every line.
+Matched substrings are rendered with the per-highlight `fill` color while the rest
+of the line uses the default `fill`. Stroke color/width are shared across the line.
+Overlapping matches resolve in the order highlights are listed.
 """
 import argparse
 import json
@@ -214,6 +223,81 @@ def get_video_resolution(video_path):
 # Caption generation
 # ─────────────────────────────────────────────
 
+def split_line_by_highlights(line, highlights):
+    """Split a line into [(segment_text, fill_or_None), ...] using inline highlights.
+
+    Each highlight is {"text": str, "fill": [r,g,b,a]}. Matching is case-insensitive
+    substring. Non-overlapping matches are taken in left-to-right order; if multiple
+    highlights match the same substring, the first one wins.
+    """
+    if not highlights or not line:
+        return [(line, None)]
+
+    matches = []  # list of (start, end, fill)
+    lower = line.lower()
+    for h in highlights:
+        target = (h.get("text") or "").lower()
+        if not target:
+            continue
+        fill = tuple(h.get("fill", (255, 255, 255, 255)))
+        idx = 0
+        while True:
+            pos = lower.find(target, idx)
+            if pos < 0:
+                break
+            matches.append((pos, pos + len(target), fill))
+            idx = pos + len(target)
+
+    if not matches:
+        return [(line, None)]
+
+    # Sort by start; drop matches that overlap an already-claimed range
+    matches.sort()
+    claimed = []
+    for m in matches:
+        if all(m[0] >= c[1] or m[1] <= c[0] for c in claimed):
+            claimed.append(m)
+
+    claimed.sort()
+    segments = []
+    cursor = 0
+    for start, end, fill in claimed:
+        if start > cursor:
+            segments.append((line[cursor:start], None))
+        segments.append((line[start:end], fill))
+        cursor = end
+    if cursor < len(line):
+        segments.append((line[cursor:], None))
+    return segments
+
+
+def measure_segments_width(draw, segments, font):
+    """Total advance width of all segments rendered with the same font."""
+    total = 0
+    for text, _ in segments:
+        if not text:
+            continue
+        bbox = draw.textbbox((0, 0), text, font=font)
+        total += bbox[2] - bbox[0]
+    return total
+
+
+def draw_segments(draw, x_start, y, segments, font, default_fill, stroke_color, stroke_width):
+    """Render each segment in sequence at increasing x positions."""
+    sw = int(round(stroke_width))
+    cursor_x = x_start
+    for text, fill in segments:
+        if not text:
+            continue
+        color = fill if fill else default_fill
+        draw.text(
+            (cursor_x, y), text, font=font, fill=color,
+            stroke_width=sw, stroke_fill=stroke_color,
+        )
+        bbox = draw.textbbox((0, 0), text, font=font)
+        cursor_x += bbox[2] - bbox[0]
+
+
 def generate_caption(config):
     """Generate a transparent PNG caption overlay from a config dict."""
     width = config.get("width", 720)
@@ -228,6 +312,7 @@ def generate_caption(config):
     line_height = config.get("line_height", 50)
     font_weight = config.get("font_weight", "regular")
     output_path = config.get("output", "caption.png")
+    highlights = config.get("highlights") or []
 
     # Scale values if resolution differs from 720x1280 base
     scale = width / 720
@@ -251,22 +336,18 @@ def generate_caption(config):
     for i, line in enumerate(lines):
         y = scaled_y + i * scaled_lh
 
+        segments = split_line_by_highlights(line, highlights)
+
         if align == "center":
-            bbox = draw.textbbox((0, 0), line, font=font)
-            tw = bbox[2] - bbox[0]
+            tw = measure_segments_width(draw, segments, font)
             x = (width - tw) // 2
         elif align == "left":
             x = int(40 * scale)  # left margin
         else:
-            bbox = draw.textbbox((0, 0), line, font=font)
-            tw = bbox[2] - bbox[0]
+            tw = measure_segments_width(draw, segments, font)
             x = width - tw - int(40 * scale)
 
-        # Draw text with stroke
-        draw.text(
-            (x, y), line, font=font, fill=fill,
-            stroke_width=scaled_stroke, stroke_fill=stroke_color,
-        )
+        draw_segments(draw, x, y, segments, font, fill, stroke_color, scaled_stroke)
 
     img.save(output_path)
     file_size = os.path.getsize(output_path)
@@ -304,6 +385,7 @@ def main():
     ap.add_argument("--stroke-color", help="Stroke color as R,G,B,A (e.g. 0,0,0,255)")
     ap.add_argument("--font-weight", choices=["regular", "bold"], default=None)
     ap.add_argument("--align", choices=["left", "center", "right"], default=None)
+    ap.add_argument("--highlights", help='JSON list of inline highlights, e.g. \'[{"text":"ANVISA","fill":[125,217,155,255]}]\'')
     ap.add_argument("--list-presets", action="store_true", help="Show all presets and exit")
     args = ap.parse_args()
 
@@ -356,6 +438,8 @@ def main():
         config["font_weight"] = args.font_weight
     if args.align:
         config["align"] = args.align
+    if args.highlights:
+        config["highlights"] = json.loads(args.highlights)
 
     config["output"] = args.output
 

@@ -95,9 +95,71 @@ Read `references/green-zone.md` for platform safe zones.
 
 **⚠️ Captions MUST be applied AFTER post-production, not before.** Grain and color grade degrade clean caption text. This was the #1 process mistake in session 2.
 
-### Caption Overlay System
+### Caption systems — pick the right one for the job
 
-Use `assemble/scripts/caption-overlay.py` for all text overlays. It generates transparent PNGs with TikTok-native styling, auto-detects video resolution, and downloads TikTok Sans from Google Fonts if not cached.
+Two scripts cover different caption needs. Pick by use case:
+
+| Use case | Script | Why |
+|----------|--------|-----|
+| Single static text overlay (e.g. Wall of Text frame, hook frame) | `assemble/scripts/caption-overlay.py` | Generates transparent PNG, you composite via ffmpeg overlay. Good for 1-2 PNGs. |
+| **Multi-segment timed caption track with inline word highlights** | **`assemble/scripts/burn-captions.py`** | **Single ffmpeg pass via ASS+libass — faster than N×PNG-overlay, supports per-word brand colors, all config-driven (no hardcoded fonts/colors/positions).** |
+
+Use `burn-captions.py` whenever the video has multiple captions on a timeline AND/OR words inside a caption need a different brand color. This is the default for talking-head and podcast-clip formats with timed captions.
+
+#### `burn-captions.py` — timed captions + inline highlights
+
+JSON-config-driven. Zero hardcoded brand assumptions — same script works for any campaign by swapping the config file.
+
+```bash
+python3 assemble/scripts/burn-captions.py \
+  --config workspace/campaigns/<slug>/captions-config.json
+```
+
+Schema (full):
+```json
+{
+  "video_input": "...raw.mp4",
+  "video_output": "...captioned.mp4",
+  "style": {
+    "font_family": "Arial Black",
+    "font_size": 44,
+    "primary_color": "FFFFFF",
+    "outline_color": "000000",
+    "outline_width": 3,
+    "shadow": 2,
+    "back_color": "80000000",
+    "border_style": 1,
+    "alignment": 2,
+    "margin_v": 180,
+    "margin_lr": 30,
+    "bold": true
+  },
+  "highlights": [
+    {"text": "ANVISA", "color": "7DD99B"},
+    {"text": "habeas corpus", "color": "7DD99B"},
+    {"text": "Justiça", "color": "FFD700"}
+  ],
+  "captions": [
+    {"start": "0:00:00.00", "end": "0:00:02.40", "text": "Line 1\\NLine 2"}
+  ],
+  "encode": {
+    "vcodec": "libx264", "profile": "main", "pix_fmt": "yuv420p",
+    "crf": 20, "preset": "medium",
+    "acodec": "aac", "abitrate": "128k", "ar": 44100,
+    "movflags": "+faststart"
+  }
+}
+```
+
+Highlights are case-insensitive substring matches. Multi-color supported — each highlight carries its own `color` (RGB hex). Longer terms beat shorter on overlap. Use `\\N` for line breaks in caption text.
+
+Pass `--keep-ass` to save the generated ASS file alongside the output for inspection.
+
+#### `caption-overlay.py` — single static PNG
+
+Use only when you need a transparent caption PNG to composite manually (e.g. Wall of Text format, custom timing not expressible in ASS, or a one-frame hook overlay).
+
+It generates transparent PNGs with TikTok-native styling, auto-detects video resolution, and downloads TikTok Sans from Google Fonts if not cached. Supports inline word highlights via JSON config (`highlights` field).
 
 ```bash
 # Generate caption overlay (auto-detects resolution from video)
