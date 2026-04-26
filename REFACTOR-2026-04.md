@@ -83,11 +83,19 @@ Seedance 2.0 i2v **propositadamente excluído** (rejeita rostos). `--provider se
 ### B-roll (cenas, produto, ambiente — sem rosto)
 
 ```
-1. Seedance 2.0 fast fal.ai      $0.024/s   ← primary, melhor cost/quality
-2. Seedance 2.0 standard fal.ai  $0.30/s    ← se fast falhar
-3. Kling 3 fal.ai                $0.084-0.168/s (com áudio)
-4. Kling 3 Replicate             ~$0.10-0.15/s (emergency)
+1. Seedance 2.0 fast fal.ai      $0.024/s          ← primary, melhor cost/quality
+2. Kling 3 fal.ai pro            $0.112/s (s/audio) | $0.168/s (c/audio)
+3. Kling 3 Replicate             ~$0.10-0.15/s (emergency)
 ```
+
+Seedance 2.0 standard ($0.30/s) **propositadamente pulado** — Kling 3 fal pro
+sem áudio ($0.112/s) é 2.7× mais barato com qualidade equivalente para B-roll.
+B-roll não precisa de áudio nativo (vem da A-roll continuous voice).
+
+**Custo de fallback por 15s de B-roll (3×5s):**
+- Cadeia primária (Seedance fast OK): $0.36
+- Fast falha → Kling fal pro s/audio: $1.68 (4.7× mais caro mas viável)
+- Antes da otimização (Seedance standard como step 2): $4.50 (12.5× mais caro)
 
 ### First frame (image gen)
 
