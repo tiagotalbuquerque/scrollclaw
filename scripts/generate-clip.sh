@@ -42,10 +42,11 @@ usage() {
     echo "  --seconds N           Duration in seconds (default: 8)"
     echo "  --aspect-ratio RATIO  portrait or landscape (default: portrait)"
     echo "  --pro                 Use Pro model tier"
-    echo "  --provider NAME       fal | seedance | kling-replicate (default: fal)"
-    echo "                        fal: tenta Sora → Seedance fal → Kling Replicate"
-    echo "                        seedance: pula Sora, vai direto para Seedance fal → Kling Replicate"
-    echo "                        kling-replicate: emergência, vai direto para Replicate Kling"
+    echo "  --provider NAME       fal | kling | seedance | kling-replicate (default: fal)"
+    echo "                        fal: tenta Sora → Kling fal → Kling Replicate"
+    echo "                        kling: pula Sora, vai direto para Kling fal → Kling Replicate"
+    echo "                        seedance: força Seedance 2.0 (AVISO: i2v rejeita rostos)"
+    echo "                        kling-replicate: emergência, vai direto para Kling Replicate"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -330,6 +331,116 @@ generate_seedance_fal() {
 }
 
 # ---------------------------------------------------------------------------
+# fal.ai Kling 3 provider (A-roll fallback intermediário) — refator 2026-04
+# Substitui o slot que era Seedance i2v. Motivação: Seedance 2.0 i2v rejeita
+# silenciosamente first frames com rosto humano (smoke test 2026-04-25),
+# então pular Seedance no A-roll e ir direto para Kling 3 fal.ai quando Sora
+# falhar.
+# ---------------------------------------------------------------------------
+generate_kling_fal() {
+    [[ -z "${FAL_KEY:-}" ]] && { echo "Error: FAL_KEY not set"; exit 2; }
+
+    KLING_DURATION="$SECONDS_DUR"
+    if [[ "$KLING_DURATION" -gt 15 ]]; then
+        echo "Warning: Duration clamped from ${KLING_DURATION}s to 15s (Kling max)" >&2
+        KLING_DURATION=15
+    fi
+    if [[ "$KLING_DURATION" -lt 3 ]]; then
+        echo "Warning: Duration clamped from ${KLING_DURATION}s to 3s (Kling min)" >&2
+        KLING_DURATION=3
+    fi
+
+    if [[ -n "$IMAGE" ]]; then
+        ENDPOINT="https://queue.fal.run/fal-ai/kling-video/v3/pro/image-to-video"
+        INPUT_JSON=$(jq -n \
+            --arg prompt "$PROMPT" \
+            --arg image "$IMAGE" \
+            --argjson duration "$KLING_DURATION" \
+            --arg ar "$MAPPED_ASPECT" \
+            '{prompt: $prompt, start_image_url: $image, duration: $duration, aspect_ratio: $ar, generate_audio: true}')
+        echo "Mode: image-to-video (Kling 3 i2v via fal.ai)"
+    else
+        ENDPOINT="https://queue.fal.run/fal-ai/kling-video/v3/pro/text-to-video"
+        INPUT_JSON=$(jq -n \
+            --arg prompt "$PROMPT" \
+            --argjson duration "$KLING_DURATION" \
+            --arg ar "$MAPPED_ASPECT" \
+            '{prompt: $prompt, duration: $duration, aspect_ratio: $ar, generate_audio: true}')
+        echo "Mode: text-to-video (Kling 3 t2v via fal.ai)"
+    fi
+
+    echo "Endpoint: $ENDPOINT"
+    echo "Duration: ${KLING_DURATION}s | Aspect: $MAPPED_ASPECT | Audio: true"
+
+    RESPONSE=$(curl -s -X POST "$ENDPOINT" \
+        -H "Authorization: Key $FAL_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$INPUT_JSON")
+    STATUS_URL=$(echo "$RESPONSE" | jq -r '.status_url // empty')
+    REQUEST_ID=$(echo "$RESPONSE" | jq -r '.request_id // empty')
+
+    if [[ -z "$STATUS_URL" || -z "$REQUEST_ID" ]]; then
+        echo "Error submitting to fal.ai (Kling):" >&2
+        echo "$RESPONSE" | jq . >&2
+        return 1
+    fi
+    echo "Request: $REQUEST_ID"
+    echo "Polling: $STATUS_URL"
+
+    START_TIME=$(date +%s)
+    while true; do
+        POLL=$(curl -s -H "Authorization: Key $FAL_KEY" "$STATUS_URL")
+        STATUS=$(echo "$POLL" | jq -r '.status // empty')
+        case "$STATUS" in
+            COMPLETED)
+                echo "Generation complete!"
+                RESPONSE_URL=$(echo "$RESPONSE" | jq -r '.response_url // empty')
+                if [[ -n "$RESPONSE_URL" ]]; then
+                    RESULT=$(curl -s -H "Authorization: Key $FAL_KEY" "$RESPONSE_URL")
+                else
+                    RESULT="$POLL"
+                fi
+                break ;;
+            FAILED|ERROR)
+                ERROR=$(echo "$POLL" | jq -r '.error // "unknown"')
+                echo "Kling generation failed: $ERROR" >&2
+                return 1 ;;
+            ""|null)
+                # fal.ai content filter silent reject — body empty
+                ELAPSED=$(( $(date +%s) - START_TIME ))
+                if [[ $ELAPSED -gt 90 ]]; then
+                    echo "Kling fal.ai silent reject (likely content filter) after ${ELAPSED}s" >&2
+                    return 1
+                fi
+                sleep "$POLL_INTERVAL" ;;
+            *)
+                ELAPSED=$(( $(date +%s) - START_TIME ))
+                if [[ $ELAPSED -gt $TIMEOUT ]]; then
+                    echo "Kling timeout after ${TIMEOUT}s" >&2
+                    return 1
+                fi
+                echo "  Status: $STATUS (${ELAPSED}s elapsed)"
+                sleep "$POLL_INTERVAL" ;;
+        esac
+    done
+
+    VIDEO_URL=$(echo "$RESULT" | jq -r '.video.url // empty')
+    if [[ -z "$VIDEO_URL" || "$VIDEO_URL" == "null" ]]; then
+        echo "Error: No video URL in Kling response" >&2
+        echo "$RESULT" | jq . >&2
+        return 1
+    fi
+    mkdir -p "$(dirname "$OUTPUT")"
+    curl -s -o "$OUTPUT" "$VIDEO_URL"
+    echo "Saved: $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
+    if [[ -n "$LOG_FILE" ]]; then
+        log_entry "fal-ai/kling-v3-pro" "$REQUEST_ID" "$KLING_DURATION"
+    fi
+    echo ""
+    echo "Done. Request ID: $REQUEST_ID"
+}
+
+# ---------------------------------------------------------------------------
 # Replicate Kling provider (final fallback) — Sora-on-Replicate removida no
 # refator 2026-04 (sunset upstream)
 # ---------------------------------------------------------------------------
@@ -450,31 +561,53 @@ generate_replicate_kling() {
 }
 
 # ---------------------------------------------------------------------------
-# Dispatch by provider
-# Cadeia refator 2026-04: Sora 2 fal → Seedance 2.0 fal → Kling 3 Replicate
-# (Sora-on-Replicate foi sunsetted no upstream e removido aqui)
+# Dispatch by provider — A-roll graceful degradation chain (refator 2026-04 v2)
+#
+# Default cadeia: Sora 2 fal → Kling 3 fal → Kling 3 Replicate
+#
+# Pular Seedance 2.0 i2v aqui porque rejeita silenciosamente first frames com
+# rosto humano (validado smoke test 2026-04-25). Para B-roll sem rosto,
+# Seedance é preferível — vê generate-broll.sh.
+#
+# Custos por segundo @720p (ordem da preferência):
+#   Sora 2 i2v ............ $0.10/s   ← primary, melhor lip sync
+#   Kling 3 fal i2v ....... $0.084-0.168/s (com áudio)  ← fallback
+#   Kling 3 Replicate ..... ~$0.10-0.15/s estimate ← emergency
 # ---------------------------------------------------------------------------
 case "$PROVIDER" in
     fal)
-        # Default: tenta Sora; cai para Seedance; cai para Replicate Kling
         if ! generate_fal; then
             echo ""
-            echo "Sora fal.ai failed — falling back to Seedance 2.0 fal.ai..."
-            if ! generate_seedance_fal; then
+            echo "Sora 2 fal.ai failed — falling back to Kling 3 fal.ai..."
+            if ! generate_kling_fal; then
                 echo ""
-                echo "Seedance fal.ai failed — falling back to Kling Replicate..."
+                echo "Kling 3 fal.ai failed — falling back to Kling 3 Replicate..."
                 PROVIDER="replicate"
                 generate_replicate_kling
             fi
         fi
         ;;
-    seedance)
-        # Pular Sora — útil se Sora estiver fora ou se quiser força Seedance
-        if ! generate_seedance_fal; then
+    kling)
+        # Pular Sora — útil se Sora estiver fora
+        if ! generate_kling_fal; then
             echo ""
-            echo "Seedance fal.ai failed — falling back to Kling Replicate..."
+            echo "Kling 3 fal.ai failed — falling back to Kling 3 Replicate..."
             PROVIDER="replicate"
             generate_replicate_kling
+        fi
+        ;;
+    seedance)
+        # AVISO: Seedance 2.0 i2v rejeita first frames com rosto humano
+        # (content_policy: likeness of real people). Use só se tiver certeza
+        # que NÃO há rosto AI no first frame. Para t2v sem first frame OK.
+        echo "WARNING: Seedance 2.0 i2v rejects human faces — use only for non-face A-roll." >&2
+        if ! generate_seedance_fal; then
+            echo ""
+            echo "Seedance fal.ai failed — falling back to Kling 3 fal.ai..."
+            if ! generate_kling_fal; then
+                PROVIDER="replicate"
+                generate_replicate_kling
+            fi
         fi
         ;;
     kling-replicate)
@@ -482,7 +615,7 @@ case "$PROVIDER" in
         generate_replicate_kling
         ;;
     *)
-        echo "Error: unknown provider '$PROVIDER' (use 'fal', 'seedance', or 'kling-replicate')" >&2
+        echo "Error: unknown provider '$PROVIDER' (use 'fal', 'kling', 'seedance', or 'kling-replicate')" >&2
         exit 1
         ;;
 esac

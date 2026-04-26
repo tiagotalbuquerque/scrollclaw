@@ -63,9 +63,47 @@ Fork: `tiagotalbuquerque/scrollclaw` (origin) ← upstream `TheMattBerman/scroll
 
 - **Gemini 3 Pro Image preview pode rate-limit.** Ter fallback para `gemini-2.5-flash-image` (cheaper, mais rápido) configurado via env override.
 - **Seedance 2.0 standard tem áudio nativo + safety filter mais permissivo que Kling**, mas é mais caro. Default fast tier ($0.024/s) para B-roll que não precisa de qualidade hero.
-- **Sora 2 está em deprecation gradual** (já notado no README upstream). Plano B: forçar `--provider seedance` para A-roll também, com voice via ElevenLabs S2S.
+- **Seedance 2.0 i2v rejeita first frames com rosto humano** (smoke test 2026-04-25): "partner_validation_failed: likeness of real people". Por isso A-roll skipa Seedance i2v e cai direto pra Kling 3 fal.ai.
+- **Sora 2 está em deprecation gradual** (já notado no README upstream). Plano B atual: A-roll cai para Kling 3 fal.ai (com áudio, $0.084-0.168/s) — Seedance i2v não é viável para talking head.
 - **GPT-5.5 não aceita vídeo nativo** — precisa extrair frames antes (3–5 frames evenly-spaced). Gemini 2.5/3 Pro aceita vídeo MP4 direto via Files API. Por isso default = Gemini para virality.
-- **ElevenLabs key não localizada em prod** — se não vier do operador, pipeline ainda funciona em modo single-clip (Sora native voice).
+- **ElevenLabs key recuperada** de `~/.config/acessoverde/av-video-keys.env`.
+
+## Graceful degradation chains (refator v2)
+
+### A-roll (talking head com rosto + diálogo)
+
+```
+1. Sora 2 fal.ai i2v        $0.10/s    ← primary
+2. Kling 3 fal.ai i2v       $0.084-0.168/s (com áudio)
+3. Kling 3 Replicate        ~$0.10-0.15/s (emergency)
+```
+
+Seedance 2.0 i2v **propositadamente excluído** (rejeita rostos). `--provider seedance` ainda existe mas com warning.
+
+### B-roll (cenas, produto, ambiente — sem rosto)
+
+```
+1. Seedance 2.0 fast fal.ai      $0.024/s   ← primary, melhor cost/quality
+2. Seedance 2.0 standard fal.ai  $0.30/s    ← se fast falhar
+3. Kling 3 fal.ai                $0.084-0.168/s (com áudio)
+4. Kling 3 Replicate             ~$0.10-0.15/s (emergency)
+```
+
+### First frame (image gen)
+
+```
+1. fal-ai/nano-banana-2          $0.08/img  ← primary
+2. fal-ai/nano-banana            $0.039/img (cheaper, lower quality)
+3. google/nano-banana-2 Replicate $0.067-0.151/img (resilience fallback)
+```
+
+### Virality scoring
+
+```
+1. gemini-2.5-flash direct       free tier  ← primary, JSON structured output
+2. gemini-2.5-pro                billing required (skip se sem billing)
+3. openai gpt-5.5                $0.005/1K input + frame extraction
+```
 
 ## Compromisso de qualidade
 

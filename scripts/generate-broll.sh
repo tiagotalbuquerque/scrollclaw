@@ -359,15 +359,78 @@ log_entry() {
 }
 
 # ---------------------------------------------------------------------------
-# Dispatch
+# Dispatch — B-roll graceful degradation chain (refator 2026-04 v2)
+#
+# Default cadeia: Seedance fast → Seedance standard → Kling 3 fal → Kling 3 Replicate
+#
+# Custos por segundo @720p (ordem da preferência):
+#   Seedance 2.0 fast t2v  $0.024/s   ← primary (best cost/quality)
+#   Seedance 2.0 fast i2v  $0.15/s
+#   Seedance 2.0 standard  $0.30/s    ← se fast falhar
+#   Kling 3 fal i2v        $0.084-0.168/s ← se Seedance família cair
+#   Kling 3 Replicate      ~$0.10-0.15/s estimate ← emergency
+#
+# B-roll é tipicamente sem rosto humano, então Seedance i2v aceita normalmente
+# (filter de "likeness" só ativa em rostos pessoa).
 # ---------------------------------------------------------------------------
+
+# Wrapper para tentar Seedance standard (não fast) caso fast falhe
+generate_fal_standard() {
+    local SAVED_QUALITY="$QUALITY"
+    QUALITY="standard"
+    local result
+    if generate_fal; then
+        result=0
+    else
+        result=1
+    fi
+    QUALITY="$SAVED_QUALITY"
+    return $result
+}
+
+# Wrapper para tentar Kling 3 fal.ai caso Seedance família falhe
+generate_fal_kling() {
+    local SAVED_FAMILY="$MODEL_FAMILY"
+    MODEL_FAMILY="kling"
+    local result
+    if generate_fal; then
+        result=0
+    else
+        result=1
+    fi
+    MODEL_FAMILY="$SAVED_FAMILY"
+    return $result
+}
+
 case "$PROVIDER" in
     fal)
+        # Default chain: Seedance fast → Seedance standard → Kling fal → Kling Replicate
         if ! generate_fal; then
             echo ""
-            echo "fal.ai failed — falling back to Replicate..."
-            PROVIDER="replicate"
-            generate_replicate
+            if [[ "$MODEL_FAMILY" == "seedance" && "$QUALITY" == "fast" ]]; then
+                echo "Seedance fast failed — trying Seedance standard..."
+                if ! generate_fal_standard; then
+                    echo ""
+                    echo "Seedance standard failed — falling back to Kling 3 fal.ai..."
+                    if ! generate_fal_kling; then
+                        echo ""
+                        echo "Kling 3 fal.ai failed — falling back to Kling 3 Replicate..."
+                        PROVIDER="replicate"
+                        generate_replicate
+                    fi
+                fi
+            elif [[ "$MODEL_FAMILY" == "seedance" ]]; then
+                echo "Seedance standard failed — falling back to Kling 3 fal.ai..."
+                if ! generate_fal_kling; then
+                    PROVIDER="replicate"
+                    generate_replicate
+                fi
+            else
+                # MODEL_FAMILY=kling já, cair direto pra Replicate
+                echo "Kling 3 fal.ai failed — falling back to Kling 3 Replicate..."
+                PROVIDER="replicate"
+                generate_replicate
+            fi
         fi
         ;;
     replicate)
