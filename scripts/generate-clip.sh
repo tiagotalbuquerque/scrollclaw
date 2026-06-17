@@ -592,7 +592,9 @@ generate_higgsfield() {
         "${HF_MODE[@]}" \
         --wait --wait-timeout "${TIMEOUT}s" --json) || { echo "Higgsfield generation failed" >&2; return 1; }
 
-    VIDEO_URL=$(echo "$RESULT" | jq -r '.result_url // empty')
+    # higgsfield --json on a job set may print an object or an array of jobs;
+    # take the first result_url either way (struct is {id,result_url,job_set_type}).
+    VIDEO_URL=$(echo "$RESULT" | jq -r '[.. | .result_url? // empty] | first // empty')
     if [[ -z "$VIDEO_URL" || "$VIDEO_URL" == "null" ]]; then
         echo "Error: No result_url in Higgsfield response" >&2
         echo "$RESULT" | jq . >&2
@@ -604,7 +606,7 @@ generate_higgsfield() {
     echo "Saved: $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
 
     if [[ -n "$LOG_FILE" ]]; then
-        JOB_ID=$(echo "$RESULT" | jq -r '.id // .job_id // empty')
+        JOB_ID=$(echo "$RESULT" | jq -r '[.. | .id? // empty] | first // empty')
         log_entry "higgsfield/$MODEL" "$JOB_ID" "$HF_DURATION"
     fi
 
