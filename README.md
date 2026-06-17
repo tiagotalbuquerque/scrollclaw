@@ -73,8 +73,29 @@ Scroll-stopping UGC video
 | `REPLICATE_API_TOKEN` | Yes | Nano Banana (first frame image generation) |
 | `OPENROUTER_API_KEY` | Recommended | Gemini via OpenRouter (virality scoring + analysis) |
 | `ELEVENLABS_API_KEY` | Optional | Only for multi-clip voice consistency (S2S) |
+| Higgsfield CLI | Optional | `--provider higgsfield` on first-frame/A-roll/B-roll + Soul ID. Uses its own login, not an env key — see below |
 
 Get keys: [fal.ai](https://fal.ai/dashboard/keys) · [Replicate](https://replicate.com/account/api-tokens) · [OpenRouter](https://openrouter.ai/keys) · [ElevenLabs](https://elevenlabs.io/app/settings/api-keys)
+
+### Higgsfield provider (optional)
+
+A single-vendor alternative for image + video. Install and authenticate once:
+
+```bash
+npm i -g @higgsfield/cli   # or: curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh
+higgsfield auth login
+```
+
+Then pass `--provider higgsfield` to `generate-first-frame.py`, `generate-clip.sh`, or `generate-broll.sh`.
+
+**Cost reality:** the plan's "unlimited" tier is **web-app only** — the API/CLI charges credits per call (verified on a Plus plan: `flux_2` 1cr, `nano_banana_2` 2cr, `kling3_0` 10cr, `seedance1_5` 4.8cr). So Higgsfield is a **fixed monthly credit budget** (~1000cr/mo on Plus), not zero-cost. Defaults pick the cheapest usable model per stage; override the video model with `HIGGSFIELD_MODEL`.
+
+**Soul ID (consistent creator):** train a face-faithful reference once, reuse it across clips:
+
+```bash
+bash scripts/create-soul.sh --name Alice ref1.png ref2.png ref3.png ref4.png ref5.png
+# prints a reference id → use as --custom_reference_id with text2image_soul_v2
+```
 
 ### System requirements
 
@@ -110,7 +131,7 @@ bash scripts/check-deps.sh
 
 ## Key findings from testing
 
-- **Sora 2 API is being deprecated.** Kling 3 is the primary fallback and may become the default A-roll provider. The pipeline handles this automatically via `generate-clip.sh`, or use `--provider kling` to skip Sora entirely.
+- **Sora 2 API is being deprecated.** Kling 3 is the primary fallback and may become the default A-roll provider. The pipeline handles this automatically via `generate-clip.sh`, or use `--provider kling` to skip Sora entirely. `--provider higgsfield` is also available on every generation stage (see Higgsfield provider above).
 - **Kling 3 is the go-to for B-roll AND A-roll fallback.** It has no content safety filter, supports 3–15s durations, and produces consistent results for both talking head and environment shots.
 - **Sora's native voice is always better than ElevenLabs TTS** for talking head. TTS sounds fake. Sora does voice + lip sync together.
 - **B-roll must be environment-matched.** Extract a frame from the A-roll → feed to Kling. Generic B-roll looks like stock footage.
