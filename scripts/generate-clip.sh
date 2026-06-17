@@ -42,10 +42,11 @@ usage() {
     echo "  --seconds N           Duration in seconds (default: 8)"
     echo "  --aspect-ratio RATIO  portrait or landscape (default: portrait)"
     echo "  --pro                 Use Pro model tier"
-    echo "  --provider NAME       fal, kling, or replicate (default: fal)"
+    echo "  --provider NAME       fal, kling, replicate, or higgsfield (default: fal)"
     echo "                        fal: tries Sora then Kling then Replicate Kling"
     echo "                        kling: skips Sora, tries Kling fal then Replicate"
     echo "                        replicate: Sora on Replicate (legacy)"
+    echo "                        higgsfield: Kling v3 via higgsfield CLI (auth: higgsfield auth login)"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -564,6 +565,54 @@ generate_replicate_kling() {
 }
 
 # ---------------------------------------------------------------------------
+# Higgsfield CLI provider (Kling v3 via higgsfield.ai)
+# ---------------------------------------------------------------------------
+generate_higgsfield() {
+    command -v higgsfield >/dev/null 2>&1 || { echo "Error: higgsfield CLI not found (install: npm i -g @higgsfield/cli; auth: higgsfield auth login)"; exit 2; }
+
+    # ponytail: model defaults to kling v3 to match the pipeline; override with HIGGSFIELD_MODEL
+    MODEL="${HIGGSFIELD_MODEL:-kling3_0}"
+
+    # Kling duration: clamp to 3-15s (same range as the fal Kling path)
+    HF_DURATION="$SECONDS_DUR"
+    [[ "$HF_DURATION" -gt 15 ]] && { echo "Warning: Duration clamped to 15s (Kling max)" >&2; HF_DURATION=15; }
+    [[ "$HF_DURATION" -lt 3 ]]  && { echo "Warning: Duration clamped to 3s (Kling min)" >&2;  HF_DURATION=3; }
+
+    [[ "$PRO" == "true" ]] && HF_MODE=(--mode pro) || HF_MODE=()
+    [[ -n "$IMAGE" ]] && HF_IMG=(--start-image "$IMAGE") || HF_IMG=()
+    [[ -n "$IMAGE" ]] && echo "Mode: image-to-video (Higgsfield $MODEL)" || echo "Mode: text-to-video (Higgsfield $MODEL)"
+    echo "Duration: ${HF_DURATION}s | Aspect: $MAPPED_ASPECT"
+
+    # ponytail: --wait blocks and prints result_url; CLI owns the polling. Flag names per README — verify with `higgsfield generate create --help`.
+    RESULT=$(higgsfield generate create "$MODEL" \
+        --prompt "$PROMPT" \
+        "${HF_IMG[@]}" \
+        --duration "$HF_DURATION" \
+        --aspect_ratio "$MAPPED_ASPECT" \
+        "${HF_MODE[@]}" \
+        --wait --wait-timeout "${TIMEOUT}s" --json) || { echo "Higgsfield generation failed" >&2; return 1; }
+
+    VIDEO_URL=$(echo "$RESULT" | jq -r '.result_url // empty')
+    if [[ -z "$VIDEO_URL" || "$VIDEO_URL" == "null" ]]; then
+        echo "Error: No result_url in Higgsfield response" >&2
+        echo "$RESULT" | jq . >&2
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$OUTPUT")"
+    curl -s -o "$OUTPUT" "$VIDEO_URL"
+    echo "Saved: $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
+
+    if [[ -n "$LOG_FILE" ]]; then
+        JOB_ID=$(echo "$RESULT" | jq -r '.id // .job_id // empty')
+        log_entry "higgsfield/$MODEL" "$JOB_ID" "$HF_DURATION"
+    fi
+
+    echo ""
+    echo "Done. Higgsfield model: $MODEL"
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch by provider
 # ---------------------------------------------------------------------------
 case "$PROVIDER" in
@@ -592,8 +641,11 @@ case "$PROVIDER" in
     replicate)
         generate_replicate
         ;;
+    higgsfield)
+        generate_higgsfield
+        ;;
     *)
-        echo "Error: unknown provider '$PROVIDER' (use 'fal', 'kling', or 'replicate')" >&2
+        echo "Error: unknown provider '$PROVIDER' (use 'fal', 'kling', 'replicate', or 'higgsfield')" >&2
         exit 1
         ;;
 esac
