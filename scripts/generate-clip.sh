@@ -46,7 +46,7 @@ usage() {
     echo "                        fal: tries Sora then Kling then Replicate Kling"
     echo "                        kling: skips Sora, tries Kling fal then Replicate"
     echo "                        replicate: Sora on Replicate (legacy)"
-    echo "                        higgsfield: Kling v3 via higgsfield CLI (auth: higgsfield auth login)"
+    echo "                        higgsfield: Kling v3 via CLI; HIGGSFIELD_TIER=budget|quality (auth: higgsfield auth login)"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -570,8 +570,15 @@ generate_replicate_kling() {
 generate_higgsfield() {
     command -v higgsfield >/dev/null 2>&1 || { echo "Error: higgsfield CLI not found (install: npm i -g @higgsfield/cli; auth: higgsfield auth login)"; exit 2; }
 
-    # ponytail: model defaults to kling v3 to match the pipeline; override with HIGGSFIELD_MODEL
-    MODEL="${HIGGSFIELD_MODEL:-kling3_0}"
+    # Model selection: HIGGSFIELD_MODEL (explicit) > HIGGSFIELD_TIER preset.
+    # budget = kling3_0_turbo (7.5cr), quality = kling3_0 (10cr). Both take any
+    # --seconds (duration is a free integer), so no duration-snap surprises.
+    case "${HIGGSFIELD_TIER:-quality}" in
+        budget)  TIER_MODEL="kling3_0_turbo" ;;
+        quality) TIER_MODEL="kling3_0" ;;
+        *) echo "Error: HIGGSFIELD_TIER must be budget or quality" >&2; exit 1 ;;
+    esac
+    MODEL="${HIGGSFIELD_MODEL:-$TIER_MODEL}"
 
     # Kling duration: clamp to 3-15s (same range as the fal Kling path)
     HF_DURATION="$SECONDS_DUR"

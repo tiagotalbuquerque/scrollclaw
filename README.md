@@ -88,7 +88,22 @@ higgsfield auth login
 
 Then pass `--provider higgsfield` to `generate-first-frame.py`, `generate-clip.sh`, or `generate-broll.sh`.
 
-**Cost reality:** the plan's "unlimited" tier is **web-app only** — the API/CLI charges credits per call (verified on a Plus plan: `flux_2` 1cr, `nano_banana_2` 2cr, `kling3_0` 10cr, `seedance1_5` 4.8cr). So Higgsfield is a **fixed monthly credit budget** (~1000cr/mo on Plus), not zero-cost. Defaults pick the cheapest usable model per stage; override the video model with `HIGGSFIELD_MODEL`.
+**Cost reality:** the plan's "unlimited" tier is **web-app only** — the API/CLI charges credits per call (verified on a Plus plan: `flux_2` 1cr, `nano_banana_2` 2cr, `kling3_0_turbo` 7.5cr, `kling3_0` 10cr). So Higgsfield is a **fixed monthly credit budget** (~1000cr/mo on Plus), not zero-cost.
+
+**Pick cost vs quality with one switch — `HIGGSFIELD_TIER`:**
+
+| `HIGGSFIELD_TIER` | First frame (image) | A-roll / B-roll (video) |
+|---|---|---|
+| `budget` | `flux_2` (1cr) | `kling3_0_turbo` (7.5cr) |
+| `quality` (default) | `nano_banana_2` (2cr) | `kling3_0` (10cr) |
+
+It applies to all three stages at once. For a specific model, `HIGGSFIELD_MODEL=<id>` (video) or `--model <id>` (first frame) overrides the tier.
+
+```bash
+# cheapest run across the whole pipeline
+export HIGGSFIELD_TIER=budget
+bash scripts/generate-clip.sh --provider higgsfield --prompt-file scene.txt --output aroll.mp4 --seconds 8
+```
 
 **Soul ID (consistent creator):** train a face-faithful reference once, reuse it across clips:
 

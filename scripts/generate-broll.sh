@@ -37,7 +37,7 @@ usage() {
     echo "  --aspect-ratio RATIO  Aspect ratio (default: 9:16)"
     echo "  --no-audio            Disable audio generation"
     echo "  --provider NAME       fal, replicate, or higgsfield (default: fal)"
-    echo "                        higgsfield: Plus credits; default kling3_0 (10cr), HIGGSFIELD_MODEL=seedance1_5 (4.8cr, --seconds 4/8/12)"
+    echo "                        higgsfield: HIGGSFIELD_TIER=budget (kling3_0_turbo 7.5cr) or quality (kling3_0 10cr, default)"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -274,15 +274,19 @@ generate_replicate() {
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # Higgsfield CLI provider (Plus plan). API charges credits per call (plan
-# "unlimited" is web-app only). Default kling3_0 (10cr) — matches this
-# script's 3-15s duration contract out of the box. For ~50% cheaper B-roll
-# set HIGGSFIELD_MODEL=seedance1_5 (4.8cr) BUT use --seconds 4, 8 or 12 (its
-# only allowed durations). CLI owns auth/poll/download — thin wrapper, no curl.
-# ponytail: no duration auto-snap — pass a valid --seconds instead.
+# "unlimited" is web-app only). Model = HIGGSFIELD_MODEL (explicit) or the
+# HIGGSFIELD_TIER preset: budget=kling3_0_turbo (7.5cr), quality=kling3_0
+# (10cr). Both accept any --seconds. CLI owns auth/poll/download — no curl.
 # ---------------------------------------------------------------------------
 generate_higgsfield() {
     command -v higgsfield >/dev/null 2>&1 || { echo "Error: higgsfield CLI not found (npm i -g @higgsfield/cli; higgsfield auth login)"; exit 2; }
-    local model="${HIGGSFIELD_MODEL:-kling3_0}"
+    local tier_model
+    case "${HIGGSFIELD_TIER:-quality}" in
+        budget)  tier_model="kling3_0_turbo" ;;
+        quality) tier_model="kling3_0" ;;
+        *) echo "Error: HIGGSFIELD_TIER must be budget or quality" >&2; exit 1 ;;
+    esac
+    local model="${HIGGSFIELD_MODEL:-$tier_model}"
     [[ -n "$IMAGE" ]] && HF_IMG=(--start-image "$IMAGE") || HF_IMG=()
     [[ -n "$IMAGE" ]] && echo "Mode: image-to-video (Higgsfield $model)" || echo "Mode: text-to-video (Higgsfield $model)"
 
