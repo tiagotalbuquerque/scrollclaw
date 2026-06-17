@@ -18,6 +18,7 @@ Usage:
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.request
@@ -186,6 +187,51 @@ def run_fal(api_key, model, prompt, aspect_ratio, output_file, poll_seconds, tim
 
 
 # ---------------------------------------------------------------------------
+# Higgsfield provider (CLI subprocess — Plus plan monthly credit budget)
+# ---------------------------------------------------------------------------
+# The `higgsfield` CLI owns auth (auth login), upload, polling and returns a
+# result_url, so this is a thin wrapper, not a reimplemented HTTP client.
+# NOTE: Plan "unlimited" is web-app only — the API/CLI charges credits per
+# call (verified: nano_banana_2=2cr, flux_2=1cr). Cheapest image: flux_2.
+
+def first_result_url(obj):
+    """--json may be an object or an array of jobs; find the first result_url."""
+    stack = [obj]
+    while stack:
+        cur = stack.pop(0)
+        if isinstance(cur, dict):
+            if cur.get('result_url'):
+                return cur['result_url']
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return None
+
+
+def run_higgsfield(api_key, model, prompt, aspect_ratio, output_file, poll_seconds, timeout_seconds):
+    if not _which('higgsfield'):
+        raise RuntimeError('higgsfield CLI not found (npm i -g @higgsfield/cli; higgsfield auth login)')
+    cmd = ['higgsfield', 'generate', 'create', model,
+           '--prompt', prompt,
+           '--aspect_ratio', aspect_ratio,
+           '--wait', '--wait-timeout', f'{timeout_seconds}s',
+           '--wait-interval', f'{poll_seconds}s', '--json']
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f'higgsfield failed: {proc.stderr.strip() or proc.stdout.strip()}')
+    url = first_result_url(json.loads(proc.stdout))
+    if not url:
+        raise RuntimeError(f'higgsfield returned no result_url: {proc.stdout[:300]}')
+    size = download_file(url, output_file)
+    return url, size
+
+
+def _which(name):
+    from shutil import which
+    return which(name)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -200,6 +246,13 @@ PROVIDER_DEFAULTS = {
         'fallback_model': 'fal-ai/nano-banana-pro',
         'env_var': 'FAL_KEY',
     },
+    'higgsfield': {
+        # Plus charges credits per call via API. flux_2 (1cr) is cheapest;
+        # nano_banana_2 = Nano Banana Pro (2cr) as quality fallback.
+        'model': 'flux_2',
+        'fallback_model': 'nano_banana_2',
+        'env_var': None,  # CLI handles auth via `higgsfield auth login`
+    },
 }
 
 
@@ -210,8 +263,8 @@ def main():
     ap.add_argument('--creator', help='Path to creator profile .md (optional, for identity context)')
     ap.add_argument('--log-file', default=None, help='Output log file path (optional, skip logging if omitted)')
     ap.add_argument('--label', default='frame1', help='Label for log entry')
-    ap.add_argument('--provider', choices=['replicate', 'fal'], default='replicate',
-                    help='Image generation provider (default: replicate)')
+    ap.add_argument('--provider', choices=['replicate', 'fal', 'higgsfield'], default='replicate',
+                    help='Image generation provider (default: replicate). higgsfield = unlimited on Plus plan, cost 0.')
     ap.add_argument('--model', default=None,
                     help='Model id. Default per provider: replicate=google/nano-banana-2, fal=fal-ai/nano-banana-2')
     ap.add_argument('--fallback-model', default=None,
@@ -228,8 +281,9 @@ def main():
     fallback_model = args.fallback_model or defaults['fallback_model']
     env_var = defaults['env_var']
 
-    token = os.environ.get(env_var)
-    if not token:
+    # higgsfield authenticates via its own CLI (auth login), no env token needed.
+    token = os.environ.get(env_var) if env_var else None
+    if env_var and not token:
         print(f'{env_var} is not set', file=sys.stderr)
         sys.exit(2)
 
@@ -251,6 +305,10 @@ def main():
                 provider_url, size = run_replicate(token, m, prompt, args.aspect_ratio,
                                                     args.output_format, args.output_file,
                                                     args.poll_seconds, args.timeout_seconds)
+            elif args.provider == 'higgsfield':
+                provider_url, size = run_higgsfield(token, m, prompt, args.aspect_ratio,
+                                                    args.output_file, args.poll_seconds,
+                                                    args.timeout_seconds)
             else:
                 provider_url, size = run_fal(token, m, prompt, args.aspect_ratio,
                                               args.output_file, args.poll_seconds,

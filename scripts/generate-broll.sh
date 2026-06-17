@@ -36,7 +36,8 @@ usage() {
     echo "  --seconds N           Duration in seconds, 3-15 (default: 5)"
     echo "  --aspect-ratio RATIO  Aspect ratio (default: 9:16)"
     echo "  --no-audio            Disable audio generation"
-    echo "  --provider NAME       fal or replicate (default: fal)"
+    echo "  --provider NAME       fal, replicate, or higgsfield (default: fal)"
+    echo "                        higgsfield: Plus credits; default kling3_0 (10cr), HIGGSFIELD_MODEL=seedance1_5 (4.8cr, --seconds 4/8/12)"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -271,6 +272,36 @@ generate_replicate() {
 # ---------------------------------------------------------------------------
 # Shared logging
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Higgsfield CLI provider (Plus plan). API charges credits per call (plan
+# "unlimited" is web-app only). Default kling3_0 (10cr) — matches this
+# script's 3-15s duration contract out of the box. For ~50% cheaper B-roll
+# set HIGGSFIELD_MODEL=seedance1_5 (4.8cr) BUT use --seconds 4, 8 or 12 (its
+# only allowed durations). CLI owns auth/poll/download — thin wrapper, no curl.
+# ponytail: no duration auto-snap — pass a valid --seconds instead.
+# ---------------------------------------------------------------------------
+generate_higgsfield() {
+    command -v higgsfield >/dev/null 2>&1 || { echo "Error: higgsfield CLI not found (npm i -g @higgsfield/cli; higgsfield auth login)"; exit 2; }
+    local model="${HIGGSFIELD_MODEL:-kling3_0}"
+    [[ -n "$IMAGE" ]] && HF_IMG=(--start-image "$IMAGE") || HF_IMG=()
+    [[ -n "$IMAGE" ]] && echo "Mode: image-to-video (Higgsfield $model)" || echo "Mode: text-to-video (Higgsfield $model)"
+
+    RESULT=$(higgsfield generate create "$model" \
+        --prompt "$PROMPT" "${HF_IMG[@]}" \
+        --duration "$SECONDS_DUR" --aspect_ratio "$ASPECT_RATIO" \
+        --wait --wait-timeout "${TIMEOUT}s" --json) || { echo "Higgsfield generation failed" >&2; return 1; }
+
+    VIDEO_URL=$(echo "$RESULT" | jq -r '[.. | .result_url? // empty] | first // empty')
+    if [[ -z "$VIDEO_URL" || "$VIDEO_URL" == "null" ]]; then
+        echo "Error: No result_url in Higgsfield response" >&2; echo "$RESULT" | jq . >&2; return 1
+    fi
+    mkdir -p "$(dirname "$OUTPUT")"
+    curl -s -o "$OUTPUT" "$VIDEO_URL"
+    echo "Saved: $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
+    [[ -n "$LOG_FILE" ]] && log_entry "higgsfield/$model" "$(echo "$RESULT" | jq -r '[.. | .id? // empty] | first // empty')"
+    echo ""; echo "Done. Higgsfield model: $model"
+}
+
 log_entry() {
     local model="$1"
     local run_id="$2"
@@ -300,8 +331,11 @@ case "$PROVIDER" in
     replicate)
         generate_replicate
         ;;
+    higgsfield)
+        generate_higgsfield
+        ;;
     *)
-        echo "Error: unknown provider '$PROVIDER' (use 'fal' or 'replicate')" >&2
+        echo "Error: unknown provider '$PROVIDER' (use 'fal', 'replicate', or 'higgsfield')" >&2
         exit 1
         ;;
 esac
