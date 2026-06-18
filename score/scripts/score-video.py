@@ -199,6 +199,72 @@ def call_gemini(prompt, frames, api_key, model):
 
 
 # ─────────────────────────────────────────────
+# OpenRouter fallback (Gemini via OpenRouter)
+# ─────────────────────────────────────────────
+
+def call_openrouter(prompt, frames, api_key, model):
+    """Same scoring call routed through OpenRouter's OpenAI-style API.
+
+    Used when the direct Gemini call fails (e.g. credits depleted). max_tokens
+    is capped because the OpenRouter account runs on a low free-tier balance;
+    the JSON score card fits comfortably under the cap.
+    """
+    or_model = model if "/" in model else f"google/{model}"
+    content = [{"type": "text", "text": prompt}]
+    for _, frame_path in frames:
+        b64 = base64.b64encode(Path(frame_path).read_bytes()).decode("ascii")
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"}})
+
+    body = {
+        "model": or_model,
+        "max_tokens": 4000,  # ponytail: capped for low free-tier balance; raise if account upgraded
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+        "messages": [{"role": "user", "content": content}],
+    }
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        raw = json.loads(resp.read())
+    return json.loads(raw["choices"][0]["message"]["content"])
+
+
+def score_video(prompt, frames, model):
+    """Score via Gemini direct (primary); fall back to OpenRouter on failure."""
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            return call_gemini(prompt, frames, gemini_key, model)
+        except Exception as e:  # noqa: BLE001 — any failure routes to fallback
+            print(f"  ⚠ Gemini direct failed ({e}); trying OpenRouter fallback…",
+                  file=sys.stderr)
+    or_key = os.environ.get("OPENROUTER_API_KEY")
+    if or_key:
+        return call_openrouter(prompt, frames, or_key, model)
+    sys.exit("Error: scoring failed — set GEMINI_API_KEY and/or OPENROUTER_API_KEY")
+
+
+def load_keys_env():
+    """Load secrets/keys.env into os.environ (without overriding existing vars)."""
+    path = Path(os.environ.get("EDGE_KEYS_ENV",
+                               Path.home() / "edge-of-chaos/secrets/keys.env"))
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip())
+
+
+# ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
 
@@ -240,12 +306,11 @@ def main():
     audience = resolve(args, cfg, 'audience')
     n_frames = int(resolve(args, cfg, 'n-frames', 8) or 8)
     model = resolve(args, cfg, 'model', 'gemini-2.5-flash')
-    api_key_env = resolve(args, cfg, 'api-key-env', 'GEMINI_API_KEY')
     frames_dir = resolve(args, cfg, 'frames-dir') or f"/tmp/score-frames-{os.getpid()}"
 
-    api_key = os.environ.get(api_key_env)
-    if not api_key:
-        sys.exit(f"Error: {api_key_env} not set in environment")
+    load_keys_env()
+    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")):
+        sys.exit("Error: set GEMINI_API_KEY (primary) and/or OPENROUTER_API_KEY (fallback)")
 
     if not Path(video).exists():
         sys.exit(f"Error: video not found: {video}")
@@ -254,7 +319,7 @@ def main():
     frames = extract_frames(video, n_frames, frames_dir)
     prompt = build_prompt(brief, transcript, platform, audience, n_frames, duration)
 
-    score = call_gemini(prompt, frames, api_key, model)
+    score = score_video(prompt, frames, model)
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(json.dumps(score, ensure_ascii=False, indent=2), encoding='utf-8')
