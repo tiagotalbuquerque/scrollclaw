@@ -11,3 +11,6 @@ __pycache__/
 
 # Temp
 /tmp/
+
+# pasta de trabalho local — não faz parte do projeto
+workspace/
