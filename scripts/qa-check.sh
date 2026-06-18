@@ -242,6 +242,31 @@ if [[ -n "$WIDTH" ]] && [[ -n "$HEIGHT" ]] && [[ "$WIDTH" =~ ^[0-9]+$ ]] && [[ "
 fi
 
 # ─────────────────────────────────────────────
+# 5. Speech truncation gate
+# ─────────────────────────────────────────────
+# Catches the "ends abruptly while the actor is still talking" failure: if the
+# last fraction of a second has loud audio, a word was cut. Threshold -35 dB
+# sits between speech (~-15 to -25 dB) and room tone / silence (~-45 dB+).
+
+if [[ "$ACODEC" != "none" ]] && [[ -n "$ACODEC" ]]; then
+  header "Speech Truncation"
+  TAIL_THRESH="-35"
+  TAIL_START=$(awk -v d="$DURATION" 'BEGIN{s=d-0.35; print (s>0)?s:0}')
+  TAIL_RMS=$($FFMPEG -hide_banner -nostats -ss "$TAIL_START" -i "$VIDEO" \
+    -af "astats=metadata=1:reset=1,ametadata=mode=print:key=lavfi.astats.Overall.RMS_level" \
+    -f null - 2>&1 | grep -oE "RMS_level=-?[0-9.]+" | sed 's/RMS_level=//' | tail -1)
+  if [[ -z "$TAIL_RMS" ]]; then
+    info "Could not measure tail audio level"
+  elif awk -v r="$TAIL_RMS" -v t="$TAIL_THRESH" 'BEGIN{exit !(r>t)}'; then
+    fail "Video ends mid-speech (tail RMS ${TAIL_RMS} dB > ${TAIL_THRESH} dB)"
+    echo "     Cause: a clip's audio was cut, or voice track outran the video."
+    echo "     Fix: re-stitch with --voice (voice-master padding) or extend the final clip."
+  else
+    pass "Clean ending (tail RMS ${TAIL_RMS} dB)"
+  fi
+fi
+
+# ─────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────
 

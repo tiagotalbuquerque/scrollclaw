@@ -111,22 +111,37 @@ echo "Stitched: $(du -h "$STITCHED" | cut -f1), ${DUR}s"
 if [[ -n "$VOICE" ]]; then
     echo ""
     echo "Replacing audio with voice track..."
-    
+
+    # Voice is the master clock: the video must never end while the voice is
+    # still talking. Extend the video by freezing its last frame to cover the
+    # full voice duration plus a tail margin, and DROP -shortest (which used to
+    # truncate the voice when it ran longer than the video).
+    TAIL_MARGIN="0.4"  # ponytail: small breathing room after the last word
+    VOICE_DUR=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$VOICE")
+    PAD=$(awk -v v="$VOICE_DUR" -v d="$DUR" -v m="$TAIL_MARGIN" \
+        'BEGIN{p=v+m-d; print (p>0)?p:0}')
+    echo "Voice: ${VOICE_DUR}s | Video: ${DUR}s | Freeze-pad: ${PAD}s"
+
+    PADDED="$TEMP_DIR/padded.mp4"
+    ffmpeg -i "$STITCHED" \
+        -vf "tpad=stop_mode=clone:stop_duration=${PAD}" \
+        -c:v libx264 -preset fast -crf "$CRF" -an \
+        "$PADDED" -y 2>/dev/null
+
     if [[ -n "$AMBIENT" ]]; then
-        # Mix voice + ambient
+        # Mix voice + ambient. duration=first → output tracks the VOICE length,
+        # so ambient can never shorten (cut) the voice.
         echo "Mixing voice + ambient (vol: $AMBIENT_VOL)..."
-        ffmpeg -i "$STITCHED" -i "$VOICE" -i "$AMBIENT" \
-            -filter_complex "[1:a]apad[voice];[2:a]volume=${AMBIENT_VOL},apad[amb];[voice][amb]amix=inputs=2:duration=shortest[aout]" \
+        ffmpeg -i "$PADDED" -i "$VOICE" -i "$AMBIENT" \
+            -filter_complex "[2:a]volume=${AMBIENT_VOL},apad[amb];[1:a][amb]amix=inputs=2:duration=first[aout]" \
             -map 0:v -map "[aout]" \
             -c:v copy -c:a aac -b:a 192k \
-            -shortest \
             "$OUTPUT" -y 2>/dev/null
     else
-        # Voice only, strip original audio
-        ffmpeg -i "$STITCHED" -i "$VOICE" \
+        # Voice only, strip original audio. No -shortest: voice plays in full.
+        ffmpeg -i "$PADDED" -i "$VOICE" \
             -map 0:v -map 1:a \
             -c:v copy -c:a aac -b:a 192k \
-            -shortest \
             "$OUTPUT" -y 2>/dev/null
     fi
 else
