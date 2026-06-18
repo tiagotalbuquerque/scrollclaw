@@ -282,12 +282,13 @@ def main():
     env_var = defaults['env_var']
 
     # HIGGSFIELD_TIER preset picks the image model when --model isn't given:
-    # budget=flux_2 (1cr), quality=nano_banana_2 / Nano Banana Pro (2cr).
+    # budget=flux_2 (1cr), quality=nano_banana_2 / Nano Banana Pro (2cr),
+    # premium=gpt_image_2 (7cr).
     if args.provider == 'higgsfield' and not args.model:
         tier = os.environ.get('HIGGSFIELD_TIER', 'quality')
-        tier_models = {'budget': 'flux_2', 'quality': 'nano_banana_2'}
+        tier_models = {'budget': 'flux_2', 'quality': 'nano_banana_2', 'premium': 'gpt_image_2'}
         if tier not in tier_models:
-            print('HIGGSFIELD_TIER must be budget or quality', file=sys.stderr)
+            print('HIGGSFIELD_TIER must be budget, quality, or premium', file=sys.stderr)
             sys.exit(1)
         model = tier_models[tier]
 

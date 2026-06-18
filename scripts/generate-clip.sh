@@ -46,7 +46,7 @@ usage() {
     echo "                        fal: tries Sora then Kling then Replicate Kling"
     echo "                        kling: skips Sora, tries Kling fal then Replicate"
     echo "                        replicate: Sora on Replicate (legacy)"
-    echo "                        higgsfield: Kling v3 via CLI; HIGGSFIELD_TIER=budget|quality (auth: higgsfield auth login)"
+    echo "                        higgsfield: CLI; HIGGSFIELD_TIER=budget|quality|premium (auth: higgsfield auth login)"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -571,22 +571,33 @@ generate_higgsfield() {
     command -v higgsfield >/dev/null 2>&1 || { echo "Error: higgsfield CLI not found (install: npm i -g @higgsfield/cli; auth: higgsfield auth login)"; exit 2; }
 
     # Model selection: HIGGSFIELD_MODEL (explicit) > HIGGSFIELD_TIER preset.
-    # budget = kling3_0_turbo (7.5cr), quality = kling3_0 (10cr). Both take any
-    # --seconds (duration is a free integer), so no duration-snap surprises.
+    # budget=kling3_0_turbo (7.5cr), quality=kling3_0 (10cr), premium=veo3_1
+    # (22cr). Veo only allows --seconds 4, 6, or 8 and uses --input_image.
     case "${HIGGSFIELD_TIER:-quality}" in
         budget)  TIER_MODEL="kling3_0_turbo" ;;
         quality) TIER_MODEL="kling3_0" ;;
-        *) echo "Error: HIGGSFIELD_TIER must be budget or quality" >&2; exit 1 ;;
+        premium) TIER_MODEL="veo3_1" ;;
+        *) echo "Error: HIGGSFIELD_TIER must be budget, quality, or premium" >&2; exit 1 ;;
     esac
     MODEL="${HIGGSFIELD_MODEL:-$TIER_MODEL}"
 
-    # Kling duration: clamp to 3-15s (same range as the fal Kling path)
     HF_DURATION="$SECONDS_DUR"
-    [[ "$HF_DURATION" -gt 15 ]] && { echo "Warning: Duration clamped to 15s (Kling max)" >&2; HF_DURATION=15; }
-    [[ "$HF_DURATION" -lt 3 ]]  && { echo "Warning: Duration clamped to 3s (Kling min)" >&2;  HF_DURATION=3; }
+    if [[ "$MODEL" == "veo3_1" ]]; then
+        [[ "$HF_DURATION" =~ ^(4|6|8)$ ]] || { echo "Error: veo3_1 only allows --seconds 4, 6, or 8" >&2; return 1; }
+    else
+        # Kling duration: clamp to 3-15s (same range as the fal Kling path)
+        [[ "$HF_DURATION" -gt 15 ]] && { echo "Warning: Duration clamped to 15s (Kling max)" >&2; HF_DURATION=15; }
+        [[ "$HF_DURATION" -lt 3 ]]  && { echo "Warning: Duration clamped to 3s (Kling min)" >&2;  HF_DURATION=3; }
+    fi
 
-    [[ "$PRO" == "true" ]] && HF_MODE=(--mode pro) || HF_MODE=()
-    [[ -n "$IMAGE" ]] && HF_IMG=(--start-image "$IMAGE") || HF_IMG=()
+    [[ "$PRO" == "true" && "$MODEL" == kling* ]] && HF_MODE=(--mode pro) || HF_MODE=()
+    if [[ -n "$IMAGE" && "$MODEL" == "veo3_1" ]]; then
+        HF_IMG=(--input_image "$IMAGE")
+    elif [[ -n "$IMAGE" ]]; then
+        HF_IMG=(--start-image "$IMAGE")
+    else
+        HF_IMG=()
+    fi
     [[ -n "$IMAGE" ]] && echo "Mode: image-to-video (Higgsfield $MODEL)" || echo "Mode: text-to-video (Higgsfield $MODEL)"
     echo "Duration: ${HF_DURATION}s | Aspect: $MAPPED_ASPECT"
 

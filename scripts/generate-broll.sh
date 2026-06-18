@@ -37,7 +37,7 @@ usage() {
     echo "  --aspect-ratio RATIO  Aspect ratio (default: 9:16)"
     echo "  --no-audio            Disable audio generation"
     echo "  --provider NAME       fal, replicate, or higgsfield (default: fal)"
-    echo "                        higgsfield: HIGGSFIELD_TIER=budget (kling3_0_turbo 7.5cr) or quality (kling3_0 10cr, default)"
+    echo "                        higgsfield: HIGGSFIELD_TIER=budget|quality|premium (default quality)"
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -276,7 +276,8 @@ generate_replicate() {
 # Higgsfield CLI provider (Plus plan). API charges credits per call (plan
 # "unlimited" is web-app only). Model = HIGGSFIELD_MODEL (explicit) or the
 # HIGGSFIELD_TIER preset: budget=kling3_0_turbo (7.5cr), quality=kling3_0
-# (10cr). Both accept any --seconds. CLI owns auth/poll/download — no curl.
+# (10cr), premium=veo3_1 (22cr). Veo only allows --seconds 4/6/8 and uses
+# --input_image. CLI owns auth/poll/download — no curl.
 # ---------------------------------------------------------------------------
 generate_higgsfield() {
     command -v higgsfield >/dev/null 2>&1 || { echo "Error: higgsfield CLI not found (npm i -g @higgsfield/cli; higgsfield auth login)"; exit 2; }
@@ -284,10 +285,20 @@ generate_higgsfield() {
     case "${HIGGSFIELD_TIER:-quality}" in
         budget)  tier_model="kling3_0_turbo" ;;
         quality) tier_model="kling3_0" ;;
-        *) echo "Error: HIGGSFIELD_TIER must be budget or quality" >&2; exit 1 ;;
+        premium) tier_model="veo3_1" ;;
+        *) echo "Error: HIGGSFIELD_TIER must be budget, quality, or premium" >&2; exit 1 ;;
     esac
     local model="${HIGGSFIELD_MODEL:-$tier_model}"
-    [[ -n "$IMAGE" ]] && HF_IMG=(--start-image "$IMAGE") || HF_IMG=()
+    if [[ "$model" == "veo3_1" ]]; then
+        [[ "$SECONDS_DUR" =~ ^(4|6|8)$ ]] || { echo "Error: veo3_1 only allows --seconds 4, 6, or 8" >&2; return 1; }
+    fi
+    if [[ -n "$IMAGE" && "$model" == "veo3_1" ]]; then
+        HF_IMG=(--input_image "$IMAGE")
+    elif [[ -n "$IMAGE" ]]; then
+        HF_IMG=(--start-image "$IMAGE")
+    else
+        HF_IMG=()
+    fi
     [[ -n "$IMAGE" ]] && echo "Mode: image-to-video (Higgsfield $model)" || echo "Mode: text-to-video (Higgsfield $model)"
 
     RESULT=$(higgsfield generate create "$model" \
