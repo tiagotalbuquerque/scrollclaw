@@ -19,7 +19,7 @@ metadata:
 
 # ScrollClaw
 
-AI-generated UGC videos that look like a real person pulled out their phone and started talking. Brands pay $500–$5,000 per UGC video from human creators. This pipeline produces them for $5–$50 in API costs.
+AI-generated UGC videos that look like a real person pulled out their phone and started talking. Brands pay $500–$5,000 per UGC video from human creators. This pipeline produces them with a provider ladder: fal/Replicate for the original cheap path, or Higgsfield Plus credits for single-vendor image/video generation.
 
 ## The Pipeline
 
@@ -117,12 +117,31 @@ bash scripts/check-deps.sh
 
 | Key | Required | Used by |
 |-----|----------|---------|
-| `FAL_KEY` | Yes | Sora 2 (A-roll) + Kling 3 (B-roll) |
-| `REPLICATE_API_TOKEN` | Yes | Nano Banana (first frames) |
+| `FAL_KEY` | Yes for default path | Sora 2 (A-roll) + Kling 3 (B-roll) via fal.ai |
+| `REPLICATE_API_TOKEN` | Yes for default path | Nano Banana (first frames) via Replicate |
+| Higgsfield CLI | Optional / recommended if using `--provider higgsfield` | First frames, A-roll, B-roll, Soul ID. Auth via `higgsfield auth login`, not env vars |
 | `OPENROUTER_API_KEY` | Recommended | Gemini (virality scoring) |
 | `ELEVENLABS_API_KEY` | Optional | Multi-clip voice consistency (S2S) |
 
 ---
+
+## Higgsfield tiers
+
+Use Higgsfield when you want one provider for first-frame + video generation. The API/CLI uses credits even on Plus; the web-app "unlimited" bucket is not exposed through the CLI.
+
+```bash
+export HIGGSFIELD_TIER=budget   # cheapest
+export HIGGSFIELD_TIER=quality  # default
+export HIGGSFIELD_TIER=premium  # best models, highest credit burn
+```
+
+| Tier | First frame | A-roll / B-roll |
+|------|-------------|-----------------|
+| `budget` | `flux_2` (1cr) | `kling3_0_turbo` (7.5cr) |
+| `quality` | `nano_banana_2` (2cr) | `kling3_0` (10cr) |
+| `premium` | `gpt_image_2` (7cr) | `veo3_1` (22cr; `--seconds` must be 4, 6, or 8) |
+
+Overrides: use `--model <id>` for first-frame, or `HIGGSFIELD_MODEL=<id>` for video.
 
 ## Six Formats
 

@@ -14,6 +14,10 @@ WARN="⚠️ "
 INFO="ℹ️ "
 
 REQUIRED_FAILURES=0
+HIGGSFIELD_READY=0
+if command -v higgsfield &>/dev/null && higgsfield account status &>/dev/null; then
+  HIGGSFIELD_READY=1
+fi
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -33,6 +37,9 @@ header "Required API Keys"
 
 if [[ -n "${FAL_KEY:-}" ]]; then
   pass "FAL_KEY is set"
+elif [[ "$HIGGSFIELD_READY" -eq 1 ]]; then
+  warn "FAL_KEY is missing (OK if using --provider higgsfield)"
+  info "Default fal path needs it; Higgsfield path is authenticated."
 else
   fail "FAL_KEY is missing"
   echo "       → Get your key at: https://fal.ai/dashboard/keys"
@@ -42,6 +49,9 @@ fi
 
 if [[ -n "${REPLICATE_API_TOKEN:-}" ]]; then
   pass "REPLICATE_API_TOKEN is set"
+elif [[ "$HIGGSFIELD_READY" -eq 1 ]]; then
+  warn "REPLICATE_API_TOKEN is missing (OK if using --provider higgsfield)"
+  info "Default Replicate first-frame path needs it; Higgsfield path is authenticated."
 else
   fail "REPLICATE_API_TOKEN is missing"
   echo "       → Get your token at: https://replicate.com/account/api-tokens"
@@ -66,7 +76,28 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 3. ffmpeg (system apt version, NOT Homebrew)
+# 3. Optional CLIs
+# ─────────────────────────────────────────────
+
+header "Optional CLIs"
+
+if command -v higgsfield &>/dev/null; then
+  pass "higgsfield CLI found at $(command -v higgsfield)"
+  if higgsfield account status &>/dev/null; then
+    HIGGSFIELD_STATUS=$(higgsfield account status 2>/dev/null | head -1)
+    pass "higgsfield authenticated ($HIGGSFIELD_STATUS)"
+  else
+    warn "higgsfield CLI is installed but not authenticated"
+    info "Run: higgsfield auth login"
+  fi
+else
+  warn "higgsfield CLI not found (only needed for --provider higgsfield)"
+  info "Install: npm i -g @higgsfield/cli"
+  info "Then auth: higgsfield auth login"
+fi
+
+# ─────────────────────────────────────────────
+# 4. ffmpeg (system apt version, NOT Homebrew)
 # ─────────────────────────────────────────────
 
 header "ffmpeg"
@@ -92,7 +123,10 @@ fi
 
 # Check drawtext filter (needs libfreetype)
 if [[ -x "$FFMPEG_PATH" ]]; then
-  if "$FFMPEG_PATH" -filters 2>/dev/null | grep -q "drawtext"; then
+  # ponytail: avoid `ffmpeg -filters | grep -q` under pipefail; grep exits early
+  # and ffmpeg may get SIGPIPE, causing a false negative.
+  FFMPEG_FILTERS=$("$FFMPEG_PATH" -hide_banner -filters 2>/dev/null || true)
+  if grep -q "drawtext" <<< "$FFMPEG_FILTERS"; then
     pass "ffmpeg has drawtext filter (libfreetype enabled)"
   else
     fail "ffmpeg is missing drawtext filter (libfreetype not compiled in)"
