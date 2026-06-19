@@ -601,12 +601,22 @@ generate_higgsfield() {
     [[ -n "$IMAGE" ]] && echo "Mode: image-to-video (Higgsfield $MODEL)" || echo "Mode: text-to-video (Higgsfield $MODEL)"
     echo "Duration: ${HF_DURATION}s | Aspect: $MAPPED_ASPECT"
 
+    # Talking-head clips need voice baked in. Veo (veo3_1*) exposes a
+    # generate_audio param defaulting to false — without this the clip is MUTE
+    # and there is no speech at all. Only pass it for models that list the
+    # param, so models without it (e.g. kling turbo) don't error.
+    HF_AUDIO=()
+    if higgsfield model get "$MODEL" 2>/dev/null | grep -qw "generate_audio"; then
+        HF_AUDIO=(--generate_audio true)
+    fi
+
     # ponytail: --wait blocks and prints result_url; CLI owns the polling. Flag names per README — verify with `higgsfield generate create --help`.
     RESULT=$(higgsfield generate create "$MODEL" \
         --prompt "$PROMPT" \
         "${HF_IMG[@]}" \
         --duration "$HF_DURATION" \
         --aspect_ratio "$MAPPED_ASPECT" \
+        "${HF_AUDIO[@]}" \
         "${HF_MODE[@]}" \
         --wait --wait-timeout "${TIMEOUT}s" --json) || { echo "Higgsfield generation failed" >&2; return 1; }
 
