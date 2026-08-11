@@ -11,6 +11,11 @@ Auth resolution order:
   1. ~/.grok/auth.json           OAuth bearer written by `grok login` (subscription)
   2. $XAI_API_KEY                metered API key (falls back automatically)
 
+On the OAuth path the `cost_in_usd_ticks` the API returns is figurative — the
+metered-API equivalent of the render, not a charge, since the plan covers it.
+The script labels it accordingly so a batch log showing "~$85" is not mistaken
+for a bill.
+
 The Zero Data Retention wrinkle
 -------------------------------
 Teams with ZDR enabled cannot have xAI hold the rendered file, so the API
@@ -190,9 +195,12 @@ def log_run(log_file, label, model, seconds, output, request_id, cost, source):
         return
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+    # "cost≈" on the OAuth line is deliberate: it is what the render would have cost
+    # through the metered API, not money leaving the account.
+    tag = f"cost≈${cost:.2f} (plan)" if source.startswith("oauth") else f"cost=${cost:.2f}"
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(f"| {stamp} | {label} | {model} | {seconds}s | grok:{source.split()[0]} | "
-                f"{output} | id={request_id} cost=${cost:.2f} |\n")
+                f"{output} | id={request_id} {tag} |\n")
 
 
 def main():
@@ -265,7 +273,16 @@ def main():
             download(url, a.output)
 
         size = Path(a.output).stat().st_size
-        print(f"  ✓ {a.output} ({size/1e6:.1f} MB) · reported cost ${cost:.2f}")
+        # The API reports cost_in_usd_ticks on every render, including OAuth calls.
+        # On the subscription path that figure is the metered-API equivalent, not a
+        # charge — the render is covered by the plan. Labelling it plainly matters:
+        # a 20-clip campaign logs ~$85 of "cost" that nobody is actually billed for,
+        # and someone reading the log later should not cancel a run over it.
+        if source.startswith("oauth"):
+            print(f"  ✓ {a.output} ({size/1e6:.1f} MB) · ~${cost:.2f} metered-equivalent "
+                  f"(covered by subscription, not charged)")
+        else:
+            print(f"  ✓ {a.output} ({size/1e6:.1f} MB) · billed ${cost:.2f} in credits")
         log_run(a.log_file, a.label, os.environ.get("GROK_VIDEO_MODEL", "grok-imagine-video"),
                 a.seconds, a.output, request_id, cost, source)
     finally:
