@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Score a UGC video against the 7-dimension virality rubric via a vision model.
 
+Backends: Gemini direct (→ OpenRouter fallback) or Grok vision on the xAI
+subscription. Grok is chosen with --provider grok (or any model named grok-*)
+and authenticates from ~/.grok/auth.json, so a scoring pass costs nothing
+beyond the subscription already being paid for.
+
 Implements the methodology in score/references/virality-scoring.md:
   - Extracts evenly-spaced frames from the video
   - Sends frames + brief + transcript context to a vision model (default Gemini Flash)
@@ -20,7 +25,8 @@ JSON config schema:
   "platform": "Instagram Reels paid Meta",
   "audience": "ICP description (mãe-cuidadora 38-55, ...)",
   "n_frames": 8,
-  "model": "gemini-2.5-flash",
+  "model": "gemini-2.5-flash",      // or "grok-4.5" to score on the xAI subscription
+  "provider": "auto",               // auto | grok | gemini
   "api_key_env": "GEMINI_API_KEY"
 }
 
@@ -235,8 +241,76 @@ def call_openrouter(prompt, frames, api_key, model):
     return json.loads(raw["choices"][0]["message"]["content"])
 
 
-def score_video(prompt, frames, model):
-    """Score via Gemini direct (primary); fall back to OpenRouter on failure."""
+GROK_AUTH_JSON = Path.home() / ".grok" / "auth.json"
+
+
+def grok_bearer():
+    """Prefer the OAuth token written by `grok login` — it spends the xAI
+    subscription rather than metered credits, which is the whole reason to
+    route scoring through Grok. Falls back to XAI_API_KEY."""
+    if GROK_AUTH_JSON.exists():
+        try:
+            rec = list(json.loads(GROK_AUTH_JSON.read_text()).values())[0]
+            if rec.get("key"):
+                return rec["key"], "oauth"
+        except Exception as e:  # noqa: BLE001 — malformed file must not be fatal
+            print(f"  ⚠ could not read {GROK_AUTH_JSON}: {e}", file=sys.stderr)
+    key = os.environ.get("XAI_API_KEY")
+    return (key, "api-key") if key else (None, None)
+
+
+def call_grok(prompt, frames, bearer, model):
+    """Grok vision scoring via the OpenAI-shaped /chat/completions endpoint.
+
+    Same message shape as the OpenRouter path, so the rubric and frame handling
+    stay identical across providers — only the transport differs. No max_tokens
+    cap here: the subscription is not paying per token the way the free-tier
+    OpenRouter balance is.
+    """
+    content = [{"type": "text", "text": prompt}]
+    for _, frame_path in frames:
+        b64 = base64.b64encode(Path(frame_path).read_bytes()).decode("ascii")
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"}})
+
+    body = {
+        "model": model if model.startswith("grok") else "grok-4.5",
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+        "messages": [{"role": "user", "content": content}],
+    }
+    req = urllib.request.Request(
+        os.environ.get("XAI_BASE_URL", "https://api.x.ai/v1") + "/chat/completions",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {bearer}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        raw = json.loads(resp.read())
+    return json.loads(raw["choices"][0]["message"]["content"])
+
+
+def score_video(prompt, frames, model, provider="auto"):
+    """Route scoring to a vision model.
+
+    provider:
+      grok   — Grok vision on the xAI subscription (OAuth). No fallback: silently
+               drifting to a metered provider would defeat the point of choosing it.
+      gemini — Gemini direct, then OpenRouter (the original chain).
+      auto   — model name decides; anything starting with 'grok' goes to Grok.
+    """
+    if provider == "auto":
+        provider = "grok" if model.startswith("grok") else "gemini"
+
+    if provider == "grok":
+        bearer, kind = grok_bearer()
+        if not bearer:
+            sys.exit("Error: no Grok auth for scoring. Run `grok login --device-auth` "
+                     "(subscription) or export XAI_API_KEY.")
+        print(f"  scoring via Grok ({model}, {kind})", file=sys.stderr)
+        return call_grok(prompt, frames, bearer, model)
+
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if gemini_key:
         try:
@@ -288,6 +362,10 @@ def main():
     ap.add_argument('--n-frames', type=int, default=None)
     ap.add_argument('--model', default=None)
     ap.add_argument('--api-key-env', default=None)
+    ap.add_argument('--provider', default=None, choices=['auto', 'grok', 'gemini'],
+                    help="Vision backend. 'grok' uses the xAI subscription via OAuth "
+                         "(no metered credits); 'gemini' keeps the Gemini→OpenRouter "
+                         "chain; 'auto' (default) picks from the model name.")
     ap.add_argument('--frames-dir', default=None, help="Where to save extracted frames (default: /tmp/score-frames-<pid>)")
     args = ap.parse_args()
 
@@ -306,10 +384,12 @@ def main():
     audience = resolve(args, cfg, 'audience')
     n_frames = int(resolve(args, cfg, 'n-frames', 8) or 8)
     model = resolve(args, cfg, 'model', 'gemini-2.5-flash')
+    provider = resolve(args, cfg, 'provider', 'auto') or 'auto'
     frames_dir = resolve(args, cfg, 'frames-dir') or f"/tmp/score-frames-{os.getpid()}"
 
     load_keys_env()
-    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")):
+    uses_grok = provider == 'grok' or (provider == 'auto' and model.startswith('grok'))
+    if not uses_grok and not (os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")):
         sys.exit("Error: set GEMINI_API_KEY (primary) and/or OPENROUTER_API_KEY (fallback)")
 
     if not Path(video).exists():
@@ -319,7 +399,7 @@ def main():
     frames = extract_frames(video, n_frames, frames_dir)
     prompt = build_prompt(brief, transcript, platform, audience, n_frames, duration)
 
-    score = score_video(prompt, frames, model)
+    score = score_video(prompt, frames, model, provider)
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(json.dumps(score, ensure_ascii=False, indent=2), encoding='utf-8')

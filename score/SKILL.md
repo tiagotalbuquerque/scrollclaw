@@ -39,7 +39,21 @@ Score every video before publishing. Read `references/virality-scoring.md` for t
 
 ## Process
 
-Use the canonical script `score/scripts/score-video.py` — extracts evenly-spaced frames, builds the rubric prompt, calls a vision model (Gemini Flash by default), writes the JSON score card.
+Use the canonical script `score/scripts/score-video.py` — extracts evenly-spaced frames, builds the rubric prompt, calls a vision model, writes the JSON score card.
+
+**Vision backend** (`--provider`): `gemini` keeps the Gemini→OpenRouter chain;
+`grok` scores with Grok vision on the xAI subscription (OAuth from
+`~/.grok/auth.json`), which costs nothing per pass and is the right default when
+Gemini's free tier is rate-limited. `auto` picks from the model name — anything
+`grok-*` routes to Grok. Like the video provider, `grok` does not fall back:
+scoring silently on a different model would make score cards incomparable across
+a campaign.
+
+```bash
+python3 score/scripts/score-video.py --provider grok --model grok-4.5 \
+  --video clips/final-01.mp4 --brief workspace/campaigns/<slug>/brief.md \
+  --output workspace/campaigns/<slug>/scores/score-01.json
+```
 
 ```bash
 python3 score/scripts/score-video.py \

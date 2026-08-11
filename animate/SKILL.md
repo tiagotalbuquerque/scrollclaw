@@ -42,10 +42,32 @@ Read `references/motion-prompting.md` for the structured prompt format. Use labe
 
 **USE THE SCRIPTS. DO NOT construct API calls manually.** Scripts handle provider routing, field names, polling, downloading, and error handling.
 
+### Choosing a provider
+
+| `--provider` | Backend | Billing |
+|---|---|---|
+| `grok` | Grok Imagine (xAI) | **xAI subscription via OAuth** — no metered spend |
+| `fal` (default) | Sora 2 → Kling 3 → Replicate | fal.ai credits |
+| `kling` | Kling 3, skipping Sora | fal.ai credits |
+| `replicate` | Sora on Replicate (legacy) | Replicate credits |
+
+Reach for `grok` when a campaign means many clips and the credit line is the
+constraint — a 20-clip run costs nothing beyond the subscription already paid
+for. It authenticates from `~/.grok/auth.json` (`grok login --device-auth`) and
+falls back to `XAI_API_KEY` only if no OAuth session exists.
+
+Two things to know before choosing it. It deliberately has **no fallback chain**:
+if it fails the run stops, because quietly rerouting to fal would move the spend
+back onto metered credits — the exact surprise the provider exists to prevent.
+And on Zero Data Retention teams the API refuses to render unless the caller
+supplies a destination for the file; `grok_video.py` handles that by standing up
+a short-lived PUT receiver and tearing it down afterwards. For unattended batches
+set `GROK_UPLOAD_URL` to a presigned PUT (R2/S3) so no port is opened per clip.
+
 ```bash
-# Image-to-video (RECOMMENDED — first frame locks the face)
+# Image-to-video on the subscription (RECOMMENDED — first frame locks the face)
 bash scripts/generate-clip.sh \
-  --provider fal \
+  --provider grok \
   --image workspace/campaigns/<slug>/frames/frame1.png \
   --prompt-file workspace/campaigns/<slug>/motion-prompt.txt \
   --output workspace/campaigns/<slug>/clips/a-roll-01.mp4 \
