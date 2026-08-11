@@ -159,15 +159,22 @@ python3 scripts/generate-first-frame.py --provider codex \
     --prompt-file card.txt --aspect-ratio 9:16 --output-file frames/hook-card.png
 ```
 
-Two limits worth stating before anyone plans around it. **Codex generates no video** —
-it is a coding agent, and video is not in its toolkit, so A-roll and B-roll stay with
-Grok or fal. And **reference-image support is unverified**: whether `image_gen` can
-lock a face the way Grok's `/images/edits` does was never confirmed, so for a creator
-who must look the same across frames, use `--provider grok`.
+**Reference images work here too** — verified, via `referenced_image_paths`. A frame
+built from the creator reference held the face, hair and glasses at 1024x1536, so
+Codex is a genuine alternative for first frames, not only text cards. Pass
+`--reference` exactly as with the grok provider.
 
-Mechanically it is a shim over `codex exec`: the OAuth token does not authenticate
-api.openai.com, and `image_gen` accepts no output path, so the script diffs the
-~/.codex tree before and after and moves what is new.
+The one hard limit: **Codex generates no video.** It is a coding agent and video is
+not in its toolkit, so A-roll and B-roll stay on Grok or fal.
+
+**Its sandbox is off by default here, and that is a deliberate trade.** Codex normally
+runs tool calls inside its bundled bubblewrap, which on this host dies with
+`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` — and takes every file
+read with it, including the reference image. Every sandbox mode goes through that
+helper, so `--sandbox danger-full-access` is the only one that works, and the script
+passes it unless you ask for `--sandboxed`. It means the model can run shell commands
+unsandboxed: acceptable for a narrow image prompt on your own host, worth knowing
+before it runs unattended.
 
 ## What ScrollClaw Needs
 

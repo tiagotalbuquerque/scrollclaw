@@ -19,22 +19,34 @@ model. So every call goes through `codex exec`; there is no HTTP request to buil
 
 Two consequences worth knowing before wiring this into a batch:
 
-1. `image_gen` takes no output path. It writes into the session directory under
-   ~/.codex, so this script snapshots that tree before and after the call and moves
-   whatever is new. Fragile by nature — if Codex ever changes where it writes, this
-   is the part that breaks.
+1. The output path is requested, not controlled. Codex honours an absolute path when
+   asked plainly, so that is what this does; left to itself it invents a descriptive
+   name under ./generated/. A locator covers the miss, scoped to the working directory
+   and to ~/.codex minus the caches.
 
-2. Reference-image support is UNVERIFIED. Codex was not authenticated when this was
-   written, so whether `image_gen` can lock a face from a reference the way Grok's
-   /images/edits does is an open question. --reference is passed through to the
-   prompt and the script says plainly that it could not confirm the result. Until
-   someone checks, use Grok for anything needing a consistent face.
+2. Reference images work, and well — verified. The tool takes `referenced_image_paths`,
+   and a portrait generated from the creator reference held the face, the glasses and
+   the hair convincingly at 941x1672. So Codex is a real option for first frames, not
+   only for text cards.
+
+3. The sandbox has to be off ON THIS HOST. Codex normally runs tool calls inside its
+   bundled bubblewrap, which here dies with:
+
+       bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+
+   and every file read fails with it — including the reference image. Every sandbox
+   mode routes through that helper, so `--sandbox danger-full-access` is the only
+   setting that works. That flag lets the model run shell commands unsandboxed, which
+   is a real trade: it is defensible here because the prompt is narrow and the host is
+   the operator's own, but it should be a conscious choice. Pass --sandboxed to keep
+   the sandbox on where bubblewrap does work.
 """
 import argparse
 import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -42,10 +54,25 @@ CODEX_HOME = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
 EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
-def images_on_disk():
-    if not CODEX_HOME.exists():
-        return set()
-    return {p for p in CODEX_HOME.rglob("*") if p.suffix.lower() in EXTS and p.is_file()}
+def newest_candidate(roots, since):
+    """Last-resort locator for when Codex ignores the requested path.
+
+    Deliberately narrow: plugin and skill caches under ~/.codex hold hundreds of
+    preview.png assets, and Codex refreshes them mid-session. An earlier version
+    diffed that tree and cheerfully returned a template thumbnail as the generated
+    image — a false success is worse than a clean failure."""
+    best = None
+    for root in roots:
+        if not root.exists():
+            continue
+        for f in root.rglob("*"):
+            if (f.suffix.lower() in EXTS and f.is_file()
+                    and f.stat().st_mtime >= since
+                    and "/plugins/cache/" not in str(f)
+                    and "/skills/" not in str(f)):
+                if best is None or f.stat().st_mtime > best.stat().st_mtime:
+                    best = f
+    return best
 
 
 def require_codex():
@@ -69,7 +96,10 @@ def main():
     p = argparse.ArgumentParser(description="Generate a still with GPT Image via Codex OAuth")
     p.add_argument("--prompt"); p.add_argument("--prompt-file")
     p.add_argument("--output-file", required=True)
-    p.add_argument("--reference", help="reference image (support UNVERIFIED — see module docstring)")
+    p.add_argument("--reference", help="reference image — holds face, hair and glasses well")
+    p.add_argument("--sandboxed", action="store_true",
+                   help="keep Codex's sandbox on. Off by default because its bundled "
+                        "bubblewrap cannot start on this host and every file read fails.")
     p.add_argument("--size", default="1024x1536",
                    help="1024x1024 | 1024x1536 (portrait) | 1536x1024 | auto")
     p.add_argument("--quality", default="high", choices=["low", "medium", "high", "auto"])
@@ -82,47 +112,59 @@ def main():
         sys.exit("Error: --prompt or --prompt-file required")
     require_codex()
 
-    before = images_on_disk()
-
+    out = Path(a.output_file).resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    started = time.time() - 5          # small slack: mtime vs. wall clock
     instruction = (
         f"Use your built-in image_gen tool to generate exactly one image.\n"
         f"Prompt: {prompt}\n"
         f"Size: {a.size}. Quality: {a.quality}.\n"
+        f"Save the result at exactly this absolute path: {out}\n"
     )
     if a.reference:
         ref = Path(a.reference).resolve()
         if not ref.exists():
             sys.exit(f"Error: reference not found: {ref}")
-        instruction += (f"Use the image at {ref} as a visual reference for the subject's "
-                        f"appearance — same face, same hair, same glasses.\n")
+        # The tool parameter is referenced_image_paths; naming it beats describing it,
+        # because "use this image as a reference" alone sometimes gets read as prose.
+        instruction += (f"Pass referenced_image_paths=[\"{ref}\"] so the subject keeps the "
+                        f"same face, hair and glasses as that photo.\n")
     # Codex is a coding agent first: told only "make an image", it sometimes decides the
     # helpful thing is to write a script that calls an image API. Ruling that out keeps
     # the run on the subscription instead of silently reaching for a metered key.
     instruction += ("Do not write code, do not install anything, do not call any external "
                     "API — use image_gen only, then report the path of the file you made.")
 
-    print(f"Codex image · GPT Image · {a.size} · quality {a.quality}")
+    cmd = ["codex", "exec", "--skip-git-repo-check"]
+    if not a.sandboxed:
+        cmd += ["--sandbox", "danger-full-access"]
+    cmd.append(instruction)
+
+    print(f"Codex image · GPT Image · {a.size} · quality {a.quality}"
+          + ("" if a.sandboxed else " · sandbox off (bubblewrap unavailable here)"))
     try:
-        run = subprocess.run(["codex", "exec", "--skip-git-repo-check", instruction],
-                             capture_output=True, text=True, timeout=a.timeout)
+        run = subprocess.run(cmd, capture_output=True, text=True, timeout=a.timeout)
     except subprocess.TimeoutExpired:
         sys.exit(f"Error: codex exec timed out after {a.timeout}s")
 
-    new = sorted(images_on_disk() - before, key=lambda p: p.stat().st_mtime)
-    if not new:
-        tail = (run.stdout or run.stderr or "")[-700:]
-        sys.exit("Error: no new image appeared under ~/.codex.\n"
-                 "  Codex may have refused, run out of plan quota, or tried to solve it\n"
-                 f"  by writing code instead of using image_gen. Output tail:\n{tail}")
+    combined = (run.stdout or "") + (run.stderr or "")
+    if not out.exists():
+        found = newest_candidate([Path.cwd(), CODEX_HOME], started)
+        if found:
+            shutil.copy(found, out)
+            print(f"  (Codex saved to {found}; moved into place)")
+        else:
+            hint = ""
+            if "bwrap" in combined or "sandbox helper failed" in combined:
+                hint = ("\n  The sandbox helper failed — rerun without --sandboxed, or fix "
+                        "bubblewrap on this host.")
+            sys.exit("Error: no image was produced.\n"
+                     "  Codex may have refused, exhausted plan quota, or answered with code "
+                     "instead of calling image_gen." + hint +
+                     f"\n  Output tail:\n{combined[-700:]}")
 
-    Path(a.output_file).parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(new[-1], a.output_file)
-    size = Path(a.output_file).stat().st_size
-    print(f"  ✓ {a.output_file} ({size/1e3:.0f} KB) · covered by the ChatGPT plan")
-    if a.reference:
-        print("  ⚠ reference support is unverified — check the face before trusting it "
-              "across a series; grok_image.py is the proven path for identity locking",
-              file=sys.stderr)
+    size = out.stat().st_size
+    print(f"  ✓ {out} ({size/1e3:.0f} KB) · covered by the ChatGPT plan")
 
     if a.log_file:
         Path(a.log_file).parent.mkdir(parents=True, exist_ok=True)
