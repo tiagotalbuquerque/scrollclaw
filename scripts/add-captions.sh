@@ -65,6 +65,21 @@ done
 [[ -z "$VIDEO" ]] && { echo "Error: --video required"; usage; }
 [[ -z "$CAPTIONS" && -z "$SRT" ]] && { echo "Error: --captions or --srt required"; usage; }
 [[ -z "$OUTPUT" ]] && { echo "Error: --output required"; usage; }
+
+# Accept both timestamp dialects. The pipe format is documented only as
+# "START_TIME|END_TIME|text", so plain seconds (4.5) are the natural thing to
+# write — but ASS Dialogue lines need H:MM:SS.cc and libass answers anything
+# else with "Bad timestamp" and renders NOTHING. Silently emitting a video with
+# no captions is the worst possible failure here, so normalize instead.
+to_ass_time() {
+    local t="$1"
+    [[ "$t" == *:* ]] && { echo "$t"; return; }   # already H:MM:SS.cc
+    awk -v s="$t" 'BEGIN{
+        h=int(s/3600); m=int((s-h*3600)/60); sec=s-h*3600-m*60;
+        printf "%d:%02d:%05.2f", h, m, sec
+    }'
+}
+
 [[ -f "$VIDEO" ]] || { echo "Error: video not found: $VIDEO"; exit 1; }
 command -v ffmpeg &>/dev/null || { echo "Error: ffmpeg required"; exit 2; }
 
@@ -152,7 +167,7 @@ if [[ -n "$CAPTIONS" ]]; then
         END=$(echo "$END" | xargs)
         TEXT=$(echo "$TEXT" | xargs)
         
-        echo "Dialogue: 0,${START},${END},Caption,,0,0,0,,${TEXT}" >> "$ASS_FILE"
+        echo "Dialogue: 0,$(to_ass_time "$START"),$(to_ass_time "$END"),Caption,,0,0,0,,${TEXT}" >> "$ASS_FILE"
     done < "$CAPTIONS"
 
 elif [[ -n "$SRT" ]]; then
@@ -176,7 +191,7 @@ elif [[ -n "$SRT" ]]; then
             BLOCK_END=$(echo "$line" | awk -F' --> ' '{print $2}' | sed 's/,/./')
         elif [[ -z "$line" && -n "$BLOCK_TEXT" ]]; then
             # End of block — write event
-            echo "Dialogue: 0,${BLOCK_START},${BLOCK_END},Caption,,0,0,0,,${BLOCK_TEXT}" >> "$ASS_FILE"
+            echo "Dialogue: 0,$(to_ass_time "$BLOCK_START"),$(to_ass_time "$BLOCK_END"),Caption,,0,0,0,,${BLOCK_TEXT}" >> "$ASS_FILE"
             BLOCK_NUM=""
             BLOCK_START=""
             BLOCK_END=""
@@ -192,7 +207,7 @@ elif [[ -n "$SRT" ]]; then
     
     # Handle last block if file doesn't end with blank line
     if [[ -n "$BLOCK_TEXT" ]]; then
-        echo "Dialogue: 0,${BLOCK_START},${BLOCK_END},Caption,,0,0,0,,${BLOCK_TEXT}" >> "$ASS_FILE"
+        echo "Dialogue: 0,$(to_ass_time "$BLOCK_START"),$(to_ass_time "$BLOCK_END"),Caption,,0,0,0,,${BLOCK_TEXT}" >> "$ASS_FILE"
     fi
 fi
 
@@ -211,7 +226,14 @@ ffmpeg -i "$VIDEO" \
     -vf "ass=$ASS_FILE" \
     -c:v libx264 -preset fast -crf 18 \
     -c:a copy \
-    "$OUTPUT" -y 2>/dev/null
+    "$OUTPUT" -y 2>"$TEMP_DIR/ffmpeg.log" || { echo "Error: caption burn failed:" >&2; tail -20 "$TEMP_DIR/ffmpeg.log" >&2; exit 1; }
+# libass reports bad timestamps as warnings and still exits 0, producing a clean
+# video with no text on it. Treat that as the failure it is.
+if grep -q "Bad timestamp" "$TEMP_DIR/ffmpeg.log" 2>/dev/null; then
+    echo "Error: libass rejected the timestamps — no captions were burned." >&2
+    grep -m3 "Bad timestamp" "$TEMP_DIR/ffmpeg.log" >&2
+    exit 1
+fi
 
 echo "Done: $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
 echo "Resolution: $(ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$OUTPUT")"

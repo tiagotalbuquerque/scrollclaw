@@ -32,6 +32,7 @@ SECONDS_DUR="8"
 ASPECT_RATIO="portrait"
 PRO="false"
 PROVIDER="fal"
+DIALOGUE=""
 POLL_INTERVAL=10
 TIMEOUT=600
 LOG_FILE=""
@@ -53,6 +54,8 @@ usage() {
     echo "                        fal: tries Sora then Kling then Replicate Kling"
     echo "                        kling: skips Sora, tries Kling fal then Replicate"
     echo "                        replicate: Sora on Replicate (legacy)"
+    echo "  --dialogue TEXT       Spoken line, lip-synced (grok provider). Without it the"
+    echo "                        creator mouths nothing — looks like broken lip sync."
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -68,6 +71,7 @@ while [[ $# -gt 0 ]]; do
         --aspect-ratio) ASPECT_RATIO="$2"; shift 2 ;;
         --pro) PRO="true"; shift ;;
         --provider) PROVIDER="$2"; shift 2 ;;
+        --dialogue) DIALOGUE="$2"; shift 2 ;;
         --log-file) LOG_FILE="$2"; shift 2 ;;
         --label) LABEL="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
@@ -578,6 +582,7 @@ generate_replicate_kling() {
 generate_grok() {
     local script_dir; script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local args=(--output "$OUTPUT" --seconds "$SECONDS_DUR" --label "$LABEL")
+    [[ -n "$DIALOGUE" ]] && args+=(--dialogue "$DIALOGUE")
     [[ -n "$IMAGE" ]]       && args+=(--image "$IMAGE")
     [[ -n "$PROMPT_FILE" ]] && args+=(--prompt-file "$PROMPT_FILE")
     [[ -n "$LOG_FILE" ]]    && args+=(--log-file "$LOG_FILE")

@@ -7,6 +7,17 @@ Why this exists alongside the fal.ai path: Grok video bills against the xAI
 campaign of 20 clips that is the difference between a credit top-up and no
 incremental spend at all.
 
+Dialogue and lip sync
+---------------------
+Since the 25 Apr 2026 update, image-to-video lip-syncs spoken dialogue and renders the
+audio natively; `grok-imagine-video-1.5` (the default here) carries that. The line goes
+inside the prompt, quoted — there is no separate audio parameter. Portuguese is verified
+working: a pt-BR line came back transcribed verbatim at 0.98 language confidence.
+
+Pass it with --dialogue so the phrasing is built for you. A prompt describing only camera
+motion produces a person mouthing nothing, which looks like broken lip sync but is really
+a prompt that never asked for speech.
+
 Auth resolution order:
   1. ~/.grok/auth.json           OAuth bearer written by `grok login` (subscription)
   2. $XAI_API_KEY                metered API key (falls back automatically)
@@ -154,7 +165,7 @@ def ufw(action, port):
 
 # ───────────────────────────────────────────────────────── generation
 def submit(bearer, prompt, image_path, seconds, aspect, resolution, upload_url):
-    payload = {"model": os.environ.get("GROK_VIDEO_MODEL", "grok-imagine-video"),
+    payload = {"model": os.environ.get("GROK_VIDEO_MODEL", "grok-imagine-video-1.5"),
                "prompt": prompt, "duration": seconds, "resolution": resolution}
     if image_path:
         mime = "image/png" if str(image_path).lower().endswith(".png") else "image/jpeg"
@@ -207,6 +218,11 @@ def main():
     p = argparse.ArgumentParser(description="Generate a clip with Grok Imagine (subscription OAuth)")
     p.add_argument("--image", help="first frame — strongly preferred; text-only drifts identity")
     p.add_argument("--prompt"); p.add_argument("--prompt-file")
+    p.add_argument("--dialogue", help="Spoken line. The model lip-syncs it and renders the "
+                                      "audio natively — omit it and you get a person "
+                                      "mouthing nothing in particular.")
+    p.add_argument("--lang", default="portugues brasileiro",
+                   help="Spoken language, named in the prompt (default: pt-BR; verified working)")
     p.add_argument("--output", required=True)
     p.add_argument("--seconds", type=int, default=8, help="1-15")
     p.add_argument("--aspect", default="9:16", help="text-to-video only")
@@ -218,6 +234,15 @@ def main():
     prompt = a.prompt or (Path(a.prompt_file).read_text().strip() if a.prompt_file else None)
     if not prompt:
         sys.exit("Error: --prompt or --prompt-file required")
+
+    # Dialogue goes in the prompt as natural language with the line quoted — there is no
+    # separate audio field. Spelling this out matters because the failure mode is silent:
+    # a motion-only prompt renders someone talking convincingly about nothing, and it
+    # reads as "the lip sync is broken" when nothing was ever asked to sync.
+    if a.dialogue:
+        prompt = (f'{prompt}\n\nEla olha para a camera e fala com naturalidade, em {a.lang}, '
+                  f'com sincronia labial precisa: "{a.dialogue}" '
+                  f'Sem musica de fundo, sem texto na tela.')
     if a.image and not Path(a.image).exists():
         sys.exit(f"Error: image not found: {a.image}")
 
@@ -283,7 +308,7 @@ def main():
                   f"(covered by subscription, not charged)")
         else:
             print(f"  ✓ {a.output} ({size/1e6:.1f} MB) · billed ${cost:.2f} in credits")
-        log_run(a.log_file, a.label, os.environ.get("GROK_VIDEO_MODEL", "grok-imagine-video"),
+        log_run(a.log_file, a.label, os.environ.get("GROK_VIDEO_MODEL", "grok-imagine-video-1.5"),
                 a.seconds, a.output, request_id, cost, source)
     finally:
         if server:

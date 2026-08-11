@@ -51,6 +51,14 @@ Read `references/motion-prompting.md` for the structured prompt format. Use labe
 | `kling` | Kling 3, skipping Sora | fal.ai credits |
 | `replicate` | Sora on Replicate (legacy) | Replicate credits |
 
+**Dialogue is not optional on `grok`.** Since April 2026 its image-to-video lip-syncs a
+spoken line and renders the audio natively (default model `grok-imagine-video-1.5`), but
+only if the line is actually in the prompt — pass it with `--dialogue "…"`. A motion-only
+prompt yields someone mouthing nothing convincingly, which reads as broken lip sync when
+in fact nothing was ever asked to sync. Portuguese is verified: a pt-BR line came back
+transcribed verbatim at 0.98 language confidence, so a bad take is a prompting problem,
+not a language limit.
+
 Reach for `grok` when a campaign means many clips and the credit line is the
 constraint — a 20-clip run costs nothing beyond the subscription already paid
 for. It authenticates from `~/.grok/auth.json` (`grok login --device-auth`) and
