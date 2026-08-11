@@ -145,6 +145,30 @@ What you give up versus fal: Sora 2's motion quality, and Kling for B-roll. What
 gain, besides the bill: A-roll and B-roll come from one engine, so they colour-match
 without the cross-engine correction pass.
 
+## Codex (ChatGPT plan) for stills
+
+`generate-first-frame.py --provider codex` renders through GPT Image on the Codex
+CLI's OAuth session — a second subscription-billed path, no API key. It exists for
+one specific reason: **text inside the frame**. Grok writes crooked, invented words;
+GPT Image renders Portuguese accents correctly. Hook cards, Wall of Text pieces and
+anything with burned-in copy belong here.
+
+```bash
+codex login                      # once, in the operator's own terminal — OAuth, not automatable
+python3 scripts/generate-first-frame.py --provider codex \
+    --prompt-file card.txt --aspect-ratio 9:16 --output-file frames/hook-card.png
+```
+
+Two limits worth stating before anyone plans around it. **Codex generates no video** —
+it is a coding agent, and video is not in its toolkit, so A-roll and B-roll stay with
+Grok or fal. And **reference-image support is unverified**: whether `image_gen` can
+lock a face the way Grok's `/images/edits` does was never confirmed, so for a creator
+who must look the same across frames, use `--provider grok`.
+
+Mechanically it is a shim over `codex exec`: the OAuth token does not authenticate
+api.openai.com, and `image_gen` accepts no output path, so the script diffs the
+~/.codex tree before and after and moves what is new.
+
 ## What ScrollClaw Needs
 
 | Key | Required | Used by |

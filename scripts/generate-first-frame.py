@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Generate a first frame image via Nano Banana 2 for Sora i2v input.
 
-Supports three providers:
+Supports four providers:
   - grok: Grok Imagine (Image 2.0 via the Quality Mode id) on the xAI subscription.
     Delegates to grok_image.py. Bills nothing beyond the plan, and is the only
     provider here that needs no API key — pair it with `--provider grok` on
     generate-clip.sh for a pipeline that spends no metered credit at all.
+  - codex: GPT Image via the Codex CLI on the ChatGPT plan. Delegates to
+    codex_image.py. Pick it when the frame carries readable text — Grok writes
+    crooked, invented words; GPT Image renders Portuguese accents correctly.
   - replicate (default): google/nano-banana-2 via api.replicate.com
   - fal: fal-ai/nano-banana-2 via queue.fal.run (matches generate-clip.sh pattern)
 
@@ -219,8 +222,9 @@ def main():
     ap.add_argument('--creator', help='Path to creator profile .md (optional, for identity context)')
     ap.add_argument('--log-file', default=None, help='Output log file path (optional, skip logging if omitted)')
     ap.add_argument('--label', default='frame1', help='Label for log entry')
-    ap.add_argument('--provider', choices=['grok', 'replicate', 'fal'], default='replicate',
-                    help='Image generation provider (default: replicate; grok = xAI subscription)')
+    ap.add_argument('--provider', choices=['grok', 'codex', 'replicate', 'fal'], default='replicate',
+                    help='Image generation provider (default: replicate). grok = xAI '
+                         'subscription; codex = ChatGPT plan (best for text in frame)')
     ap.add_argument('--reference', default=None,
                     help='Creator reference image (grok provider). Without it the face '
                          'drifts between frames, which no amount of prompting fixes.')
@@ -247,6 +251,21 @@ def main():
             cmd += ['--reference', args.reference]
         if args.model:
             cmd += ['--model', args.model]
+        if args.log_file:
+            cmd += ['--log-file', args.log_file]
+        sys.exit(subprocess.call(cmd))
+
+    if args.provider == 'codex':
+        import subprocess
+        cmd = [sys.executable, str(Path(__file__).parent / 'codex_image.py'),
+               '--prompt-file', args.prompt_file, '--output-file', args.output_file,
+               '--label', args.label]
+        # Codex takes pixel sizes, not ratios; map the common verticals and let
+        # anything else fall through to its default rather than guessing.
+        cmd += ['--size', {'9:16': '1024x1536', '16:9': '1536x1024',
+                           '1:1': '1024x1024'}.get(args.aspect_ratio, 'auto')]
+        if args.reference:
+            cmd += ['--reference', args.reference]
         if args.log_file:
             cmd += ['--log-file', args.log_file]
         sys.exit(subprocess.call(cmd))
