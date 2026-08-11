@@ -113,6 +113,38 @@ bash scripts/check-deps.sh
 
 ---
 
+## Grok-only mode (no metered spend)
+
+Every stage that calls a model has a Grok backend, so a campaign can run start to
+finish on the xAI subscription — no fal.ai, Replicate, Gemini or OpenRouter key
+involved, and nothing billed per generation:
+
+```bash
+grok login --device-auth                      # once; token refreshes itself
+
+python3 scripts/generate-first-frame.py --provider grok \
+    --prompt-file frame.txt --reference creators/reference.jpg --output-file frames/f1.png
+bash scripts/generate-clip.sh --provider grok --image frames/f1.png \
+    --prompt-file motion.txt --dialogue "the spoken line" --output clips/a-roll-01.mp4
+bash scripts/generate-broll.sh --provider grok --image frames/f1.png \
+    --prompt-file broll.txt --output clips/b-roll-01.mp4
+python3 score/scripts/score-video.py --provider grok --model grok-4.5 \
+    --video clips/final-01.mp4 --brief brief.md --output scores/score-01.json
+```
+
+Stitching, post-production and captions are local ffmpeg — they never cost anything.
+
+Three things to know before committing a campaign to it. **No provider falls back**:
+a Grok failure stops the run rather than quietly reappearing as metered spend on
+another vendor. **Dialogue must be passed explicitly** with `--dialogue`, or the
+creator mouths nothing and it reads as broken lip sync. And the `cost_in_usd_ticks`
+in every response is **figurative on OAuth** — the metered equivalent, not a charge;
+a 20-clip run logs dollars nobody is billed for.
+
+What you give up versus fal: Sora 2's motion quality, and Kling for B-roll. What you
+gain, besides the bill: A-roll and B-roll come from one engine, so they colour-match
+without the cross-engine correction pass.
+
 ## What ScrollClaw Needs
 
 | Key | Required | Used by |
