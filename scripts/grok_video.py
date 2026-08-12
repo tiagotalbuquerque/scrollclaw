@@ -14,7 +14,9 @@ audio natively; `grok-imagine-video-1.5` (the default here) carries that. The li
 inside the prompt, quoted — there is no separate audio parameter. Portuguese is verified
 working: a pt-BR line came back transcribed verbatim at 0.98 language confidence.
 
-Pass it with --dialogue so the phrasing is built for you. A prompt describing only camera
+Write the line with its accents. Stripping them to avoid shell-escaping trouble makes
+the model pronounce what it was handed — "é" comes out as "e" — and it is obvious on
+playback. Pass it with --dialogue so the phrasing is built for you. A prompt describing only camera
 motion produces a person mouthing nothing, which looks like broken lip sync but is really
 a prompt that never asked for speech.
 
@@ -218,9 +220,9 @@ def main():
     p = argparse.ArgumentParser(description="Generate a clip with Grok Imagine (subscription OAuth)")
     p.add_argument("--image", help="first frame — strongly preferred; text-only drifts identity")
     p.add_argument("--prompt"); p.add_argument("--prompt-file")
-    p.add_argument("--dialogue", help="Spoken line. The model lip-syncs it and renders the "
-                                      "audio natively — omit it and you get a person "
-                                      "mouthing nothing in particular.")
+    p.add_argument("--dialogue", help="Spoken line, WITH accents. The model lip-syncs it and "
+                                      "renders the audio natively — omit it and you get a "
+                                      "person mouthing nothing in particular.")
     p.add_argument("--lang", default="portugues brasileiro",
                    help="Spoken language, named in the prompt (default: pt-BR; verified working)")
     p.add_argument("--output", required=True)
@@ -240,6 +242,14 @@ def main():
     # a motion-only prompt renders someone talking convincingly about nothing, and it
     # reads as "the lip sync is broken" when nothing was ever asked to sync.
     if a.dialogue:
+        # Write the line the way it is spelled, accents included. Stripping them to dodge
+        # shell-escaping worries makes the model read what it was given: "é" becomes "e",
+        # "começar" becomes "comecar". It is audible immediately and it is not a model
+        # limitation — the same line with accents comes back correct through STT.
+        sem_acento = set("áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ").isdisjoint(a.dialogue)
+        if sem_acento and a.lang.startswith("portug") and len(a.dialogue) > 40:
+            print("  ⚠ dialogue has no accented characters — if the line should have them, "
+                  "the pronunciation will be wrong (é read as e)", file=sys.stderr)
         prompt = (f'{prompt}\n\nEla olha para a camera e fala com naturalidade, em {a.lang}, '
                   f'com sincronia labial precisa: "{a.dialogue}" '
                   f'Sem musica de fundo, sem texto na tela.')
