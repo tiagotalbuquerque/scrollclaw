@@ -42,6 +42,23 @@ If the user asks for one stage explicitly, do not force the full pipeline. If th
 
 ## Stage 1: Stitch + Audio Orchestration
 
+### Room tone is not optional
+
+Generated audio arrives at digital silence — a Grok talking head measured **-77 dBFS**
+in its gaps, where real phone footage sits nearer -55. Nothing about the voice sounds
+wrong; the absence of a floor is what reads as synthetic, and it is the first thing an
+editor notices next to Sora output.
+
+```bash
+bash scripts/make-room-tone.sh --preset office        # or room | street
+bash scripts/post-production.sh --input raw.mp4 --output graded.mp4 \
+     --ambient assets/audio/room-tone-office.wav --ambient-vol 0.8
+```
+
+Match the preset to the scene: `office` for a workplace, `room` for a home setup,
+`street` when a window is in shot. Verify by ear, but the floor should land around
+-60 dBFS — audible as presence, never as hiss.
+
 Read `references/audio-orchestration.md` for the full process.
 
 **The critical ordering (tested):**
