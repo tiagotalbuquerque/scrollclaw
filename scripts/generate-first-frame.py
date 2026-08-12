@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """Generate a first frame image via Nano Banana 2 for Sora i2v input.
 
-Supports two providers:
+Supports four providers:
+  - grok: Grok Imagine (Image 2.0 via the Quality Mode id) on the xAI subscription.
+    Delegates to grok_image.py. Bills nothing beyond the plan, and is the only
+    provider here that needs no API key — pair it with `--provider grok` on
+    generate-clip.sh for a pipeline that spends no metered credit at all.
+  - codex: GPT Image via the Codex CLI on the ChatGPT plan. Delegates to
+    codex_image.py. Pick it when the frame carries readable text — Grok writes
+    crooked, invented words; GPT Image renders Portuguese accents correctly.
   - replicate (default): google/nano-banana-2 via api.replicate.com
   - fal: fal-ai/nano-banana-2 via queue.fal.run (matches generate-clip.sh pattern)
 
@@ -14,6 +21,11 @@ Usage:
 
   # Via fal.ai (single-vendor billing with Sora 2 i2v on the same host)
   python3 generate-first-frame.py --provider fal --prompt-file p.txt --output-file f.png
+
+  # Via Grok on the subscription — pass the creator reference so the face is locked
+  python3 generate-first-frame.py --provider grok --prompt-file p.txt \
+      --reference workspace/campaigns/<slug>/frames/creator-reference.jpg \
+      --output-file f.png
 """
 import argparse
 import json
@@ -210,8 +222,12 @@ def main():
     ap.add_argument('--creator', help='Path to creator profile .md (optional, for identity context)')
     ap.add_argument('--log-file', default=None, help='Output log file path (optional, skip logging if omitted)')
     ap.add_argument('--label', default='frame1', help='Label for log entry')
-    ap.add_argument('--provider', choices=['replicate', 'fal'], default='replicate',
-                    help='Image generation provider (default: replicate)')
+    ap.add_argument('--provider', choices=['grok', 'codex', 'replicate', 'fal'], default='replicate',
+                    help='Image generation provider (default: replicate). grok = xAI '
+                         'subscription; codex = ChatGPT plan (best for text in frame)')
+    ap.add_argument('--reference', default=None,
+                    help='Creator reference image (grok provider). Without it the face '
+                         'drifts between frames, which no amount of prompting fixes.')
     ap.add_argument('--model', default=None,
                     help='Model id. Default per provider: replicate=google/nano-banana-2, fal=fal-ai/nano-banana-2')
     ap.add_argument('--fallback-model', default=None,
@@ -222,6 +238,37 @@ def main():
     ap.add_argument('--timeout-seconds', type=int, default=300)
     ap.add_argument('--no-fallback', action='store_true')
     args = ap.parse_args()
+
+    # Grok runs through its own script rather than this file's Replicate/fal plumbing:
+    # the auth (OAuth), the endpoint (/images/edits) and the reference-cropping rule
+    # are all different enough that sharing the code path would obscure both.
+    if args.provider == 'grok':
+        import subprocess
+        cmd = [sys.executable, str(Path(__file__).parent / 'grok_image.py'),
+               '--prompt-file', args.prompt_file, '--output-file', args.output_file,
+               '--aspect-ratio', args.aspect_ratio, '--label', args.label]
+        if args.reference:
+            cmd += ['--reference', args.reference]
+        if args.model:
+            cmd += ['--model', args.model]
+        if args.log_file:
+            cmd += ['--log-file', args.log_file]
+        sys.exit(subprocess.call(cmd))
+
+    if args.provider == 'codex':
+        import subprocess
+        cmd = [sys.executable, str(Path(__file__).parent / 'codex_image.py'),
+               '--prompt-file', args.prompt_file, '--output-file', args.output_file,
+               '--label', args.label]
+        # Codex takes pixel sizes, not ratios; map the common verticals and let
+        # anything else fall through to its default rather than guessing.
+        cmd += ['--size', {'9:16': '1024x1536', '16:9': '1536x1024',
+                           '1:1': '1024x1024'}.get(args.aspect_ratio, 'auto')]
+        if args.reference:
+            cmd += ['--reference', args.reference]
+        if args.log_file:
+            cmd += ['--log-file', args.log_file]
+        sys.exit(subprocess.call(cmd))
 
     defaults = PROVIDER_DEFAULTS[args.provider]
     model = args.model or defaults['model']

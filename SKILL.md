@@ -113,6 +113,69 @@ bash scripts/check-deps.sh
 
 ---
 
+## Grok-only mode (no metered spend)
+
+Every stage that calls a model has a Grok backend, so a campaign can run start to
+finish on the xAI subscription — no fal.ai, Replicate, Gemini or OpenRouter key
+involved, and nothing billed per generation:
+
+```bash
+grok login --device-auth                      # once; token refreshes itself
+
+python3 scripts/generate-first-frame.py --provider grok \
+    --prompt-file frame.txt --reference creators/reference.jpg --output-file frames/f1.png
+bash scripts/generate-clip.sh --provider grok --image frames/f1.png \
+    --prompt-file motion.txt --dialogue "the spoken line" --output clips/a-roll-01.mp4
+bash scripts/generate-broll.sh --provider grok --image frames/f1.png \
+    --prompt-file broll.txt --output clips/b-roll-01.mp4
+python3 score/scripts/score-video.py --provider grok --model grok-4.5 \
+    --video clips/final-01.mp4 --brief brief.md --output scores/score-01.json
+```
+
+Stitching, post-production and captions are local ffmpeg — they never cost anything.
+
+Three things to know before committing a campaign to it. **No provider falls back**:
+a Grok failure stops the run rather than quietly reappearing as metered spend on
+another vendor. **Dialogue must be passed explicitly** with `--dialogue`, or the
+creator mouths nothing and it reads as broken lip sync. And the `cost_in_usd_ticks`
+in every response is **figurative on OAuth** — the metered equivalent, not a charge;
+a 20-clip run logs dollars nobody is billed for.
+
+What you give up versus fal: Sora 2's motion quality, and Kling for B-roll. What you
+gain, besides the bill: A-roll and B-roll come from one engine, so they colour-match
+without the cross-engine correction pass.
+
+## Codex (ChatGPT plan) for stills
+
+`generate-first-frame.py --provider codex` renders through GPT Image on the Codex
+CLI's OAuth session — a second subscription-billed path, no API key. It exists for
+one specific reason: **text inside the frame**. Grok writes crooked, invented words;
+GPT Image renders Portuguese accents correctly. Hook cards, Wall of Text pieces and
+anything with burned-in copy belong here.
+
+```bash
+codex login                      # once, in the operator's own terminal — OAuth, not automatable
+python3 scripts/generate-first-frame.py --provider codex \
+    --prompt-file card.txt --aspect-ratio 9:16 --output-file frames/hook-card.png
+```
+
+**Reference images work here too** — verified, via `referenced_image_paths`. A frame
+built from the creator reference held the face, hair and glasses at 1024x1536, so
+Codex is a genuine alternative for first frames, not only text cards. Pass
+`--reference` exactly as with the grok provider.
+
+The one hard limit: **Codex generates no video.** It is a coding agent and video is
+not in its toolkit, so A-roll and B-roll stay on Grok or fal.
+
+**Its sandbox is off by default here, and that is a deliberate trade.** Codex normally
+runs tool calls inside its bundled bubblewrap, which on this host dies with
+`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` — and takes every file
+read with it, including the reference image. Every sandbox mode goes through that
+helper, so `--sandbox danger-full-access` is the only one that works, and the script
+passes it unless you ask for `--sandboxed`. It means the model can run shell commands
+unsandboxed: acceptable for a narrow image prompt on your own host, worth knowing
+before it runs unattended.
+
 ## What ScrollClaw Needs
 
 | Key | Required | Used by |

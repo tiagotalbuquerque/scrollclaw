@@ -103,6 +103,20 @@ if [[ -x "$FFMPEG_PATH" ]]; then
 fi
 
 # ─────────────────────────────────────────────
+# 3b. Grok OAuth (optional) — enables subscription-billed video + scoring
+header "Grok OAuth (optional)"
+if [ -f "$HOME/.grok/auth.json" ]; then
+    pass "Grok OAuth session found (~/.grok/auth.json)"
+    info "--provider grok bills the xAI subscription, not metered credits"
+    info "Grok-only run: first-frame + A-roll + B-roll + score need no other key"
+elif [ -n "${XAI_API_KEY:-}" ]; then
+    warn "No OAuth session; XAI_API_KEY set — Grok would spend metered credits"
+    info "Prefer: grok login --device-auth"
+else
+    info "Grok not configured (optional). Enables --provider grok end to end"
+    info "Set up with: grok login --device-auth"
+fi
+
 # 4. ffprobe
 # ─────────────────────────────────────────────
 

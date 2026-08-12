@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate a video clip via Sora 2 or Kling 3 on fal.ai, with Replicate fallback.
+# Generate a video clip via Grok Imagine (xAI subscription), Sora 2 or Kling 3 on
+# fal.ai, with Replicate fallback.
 # Supports both text-to-video and image-to-video (first frame).
 #
 # Fallback chain (default --provider fal):
@@ -13,6 +14,10 @@ set -euo pipefail
 #
 #   # Image to video (fal.ai)
 #   bash generate-clip.sh --image frame1.png --prompt-file motion.txt --output clip.mp4 --seconds 8
+#
+#   # Grok Imagine — spends the xAI subscription (OAuth), not metered credits
+#   bash generate-clip.sh --provider grok --image frame1.png --prompt-file motion.txt \
+#        --output clip.mp4 --seconds 8
 #
 #   # Skip Sora, use Kling directly (for when Sora is sunset)
 #   bash generate-clip.sh --provider kling --prompt-file scene.txt --output clip.mp4 --seconds 8
@@ -27,6 +32,7 @@ SECONDS_DUR="8"
 ASPECT_RATIO="portrait"
 PRO="false"
 PROVIDER="fal"
+DIALOGUE=""
 POLL_INTERVAL=10
 TIMEOUT=600
 LOG_FILE=""
@@ -42,10 +48,14 @@ usage() {
     echo "  --seconds N           Duration in seconds (default: 8)"
     echo "  --aspect-ratio RATIO  portrait or landscape (default: portrait)"
     echo "  --pro                 Use Pro model tier"
-    echo "  --provider NAME       fal, kling, or replicate (default: fal)"
+    echo "  --provider NAME       grok, fal, kling, or replicate (default: fal)"
+    echo "                        grok: Grok Imagine on the xAI subscription (OAuth),"
+    echo "                              no metered credits; no fallback by design"
     echo "                        fal: tries Sora then Kling then Replicate Kling"
     echo "                        kling: skips Sora, tries Kling fal then Replicate"
     echo "                        replicate: Sora on Replicate (legacy)"
+    echo "  --dialogue TEXT       Spoken line, lip-synced (grok provider). Without it the"
+    echo "                        creator mouths nothing — looks like broken lip sync."
     echo "  --log-file FILE       Append to output log"
     echo "  --label TEXT          Label for log entry"
     echo "  --timeout N           Timeout in seconds (default: 600)"
@@ -61,6 +71,7 @@ while [[ $# -gt 0 ]]; do
         --aspect-ratio) ASPECT_RATIO="$2"; shift 2 ;;
         --pro) PRO="true"; shift ;;
         --provider) PROVIDER="$2"; shift 2 ;;
+        --dialogue) DIALOGUE="$2"; shift 2 ;;
         --log-file) LOG_FILE="$2"; shift 2 ;;
         --label) LABEL="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
@@ -564,9 +575,38 @@ generate_replicate_kling() {
 }
 
 # ---------------------------------------------------------------------------
+# Grok Imagine — bills the xAI subscription (OAuth) instead of metered credits.
+# Delegates to grok_video.py, which also handles the Zero Data Retention
+# upload_url requirement. Kept as a thin shim so the fal path stays untouched.
+# ---------------------------------------------------------------------------
+generate_grok() {
+    local script_dir; script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local args=(--output "$OUTPUT" --seconds "$SECONDS_DUR" --label "$LABEL")
+    [[ -n "$DIALOGUE" ]] && args+=(--dialogue "$DIALOGUE")
+    [[ -n "$IMAGE" ]]       && args+=(--image "$IMAGE")
+    [[ -n "$PROMPT_FILE" ]] && args+=(--prompt-file "$PROMPT_FILE")
+    [[ -n "$LOG_FILE" ]]    && args+=(--log-file "$LOG_FILE")
+    [[ -n "$TIMEOUT" ]]     && args+=(--timeout "$TIMEOUT")
+    # ScrollClaw speaks "portrait"/"landscape"; the xAI API wants a ratio.
+    case "$ASPECT_RATIO" in
+        portrait)  args+=(--aspect 9:16) ;;
+        landscape) args+=(--aspect 16:9) ;;
+        square)    args+=(--aspect 1:1)  ;;
+        *)         args+=(--aspect "$ASPECT_RATIO") ;;
+    esac
+    python3 "$script_dir/grok_video.py" "${args[@]}"
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch by provider
 # ---------------------------------------------------------------------------
 case "$PROVIDER" in
+    grok)
+        # No automatic fallback: falling through to fal would silently move the
+        # spend from the subscription to metered credits, which is exactly the
+        # surprise this provider exists to avoid. Fail loudly instead.
+        generate_grok
+        ;;
     fal)
         # Default: try Sora first, fall back to Kling fal, then Kling Replicate
         if ! generate_fal; then
@@ -593,7 +633,7 @@ case "$PROVIDER" in
         generate_replicate
         ;;
     *)
-        echo "Error: unknown provider '$PROVIDER' (use 'fal', 'kling', or 'replicate')" >&2
+        echo "Error: unknown provider '$PROVIDER' (use 'grok', 'fal', 'kling', or 'replicate')" >&2
         exit 1
         ;;
 esac

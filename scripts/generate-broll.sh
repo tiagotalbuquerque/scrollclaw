@@ -289,6 +289,22 @@ log_entry() {
 # Dispatch
 # ---------------------------------------------------------------------------
 case "$PROVIDER" in
+    grok)
+        # B-roll on the subscription. Same engine as A-roll, so the two halves of a
+        # clip come out of one model and colour-match without a correction pass —
+        # cross-engine matching exists precisely because mixing vendors does not.
+        # No fallback: dropping to fal would move the spend back onto metered credits.
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        grok_args=(--output "$OUTPUT" --seconds "$SECONDS_DUR" --label "$LABEL" --prompt-file "$PROMPT_FILE")
+        [[ -n "$IMAGE" ]]    && grok_args+=(--image "$IMAGE")
+        [[ -n "$LOG_FILE" ]] && grok_args+=(--log-file "$LOG_FILE")
+        case "$ASPECT_RATIO" in
+            portrait)  grok_args+=(--aspect 9:16) ;;
+            landscape) grok_args+=(--aspect 16:9) ;;
+            *)         grok_args+=(--aspect "$ASPECT_RATIO") ;;
+        esac
+        python3 "$script_dir/grok_video.py" "${grok_args[@]}"
+        ;;
     fal)
         if ! generate_fal; then
             echo ""

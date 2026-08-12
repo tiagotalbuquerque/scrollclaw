@@ -288,7 +288,13 @@ build_audio_mix() {
   # Exported as globals: EXTRA_INPUTS, FILTER_COMPLEX, MAP_AUDIO
   
   EXTRA_INPUTS=()
-  FILTER_COMPLEX=""
+  # Array, not a string. The call site runs through `eval`, and an unquoted string
+  # containing the filtergraph's `;` separators gets split into separate shell
+  # commands — ffmpeg then receives only the first clause and dies with
+  # "Filter volume:default has an unconnected output". Single-clause graphs
+  # (ambient onto silent video) survived; every multi-clause one was broken, which
+  # is every talking head, since those always arrive with audio.
+  FILTER_COMPLEX=()
   MAP_AUDIO=()
   
   if [[ -z "$VOICE" && -z "$AMBIENT" ]]; then
@@ -316,18 +322,23 @@ build_audio_mix() {
   # Build filter_complex
   if [[ -n "$VOICE" && -n "$AMBIENT" ]]; then
     # Mix voice + ambient together
-    FILTER_COMPLEX="-filter_complex [${voice_idx}:a]volume=${VOICE_VOL}[v];[${ambient_idx}:a]volume=${AMBIENT_VOL}[a];[v][a]amix=inputs=2:duration=shortest[out]"
+    FILTER_COMPLEX=(-filter_complex "[${voice_idx}:a]volume=${VOICE_VOL}[v];[${ambient_idx}:a]volume=${AMBIENT_VOL}[a];[v][a]amix=inputs=2:duration=shortest[out]")
     MAP_AUDIO=(-map "[out]" -c:a aac -b:a 192k)
   elif [[ -n "$VOICE" ]]; then
     # Voice only
-    FILTER_COMPLEX="-filter_complex [${voice_idx}:a]volume=${VOICE_VOL}[out]"
+    FILTER_COMPLEX=(-filter_complex "[${voice_idx}:a]volume=${VOICE_VOL}[out]")
     MAP_AUDIO=(-map "[out]" -c:a aac -b:a 192k)
   elif [[ -n "$AMBIENT" ]]; then
     # Ambient mixed under original audio (if any)
     if [[ -n "$input_has_audio" ]]; then
-      FILTER_COMPLEX="-filter_complex [0:a]volume=1.0[orig];[${ambient_idx}:a]volume=${AMBIENT_VOL}[amb];[orig][amb]amix=inputs=2:duration=shortest[out]"
+      # duration=first, not shortest: room tone is a short loop and `shortest` would
+      # truncate the video's audio to the ambience length.
+      # normalize=0 matters as much: amix divides by input count by default, so mixing
+      # in a -55 dB room tone was quietening the dialogue by 6 dB. Ambience should sit
+      # under the voice, not attenuate it.
+      FILTER_COMPLEX=(-filter_complex "[0:a]volume=1.0[orig];[${ambient_idx}:a]volume=${AMBIENT_VOL},aloop=loop=-1:size=2e9[amb];[orig][amb]amix=inputs=2:duration=first:normalize=0[out]")
     else
-      FILTER_COMPLEX="-filter_complex [${ambient_idx}:a]volume=${AMBIENT_VOL}[out]"
+      FILTER_COMPLEX=(-filter_complex "[${ambient_idx}:a]volume=${AMBIENT_VOL}[out]")
     fi
     MAP_AUDIO=(-map "[out]" -c:a aac -b:a 192k)
   fi
@@ -443,9 +454,9 @@ else
   
   build_audio_mix "$INPUT" "$INPUT_HAS_AUDIO"
   
-  if [[ -n "$FILTER_COMPLEX" ]]; then
+  if [[ ${#FILTER_COMPLEX[@]} -gt 0 ]]; then
     eval "$FFMPEG" -y -i \""$INPUT"\" "${EXTRA_INPUTS[@]@Q}" \
-      $FILTER_COMPLEX \
+      "${FILTER_COMPLEX[@]@Q}" \
       -vf \""$VFILTER"\" \
       -map 0:v \
       "${MAP_AUDIO[@]@Q}" \
